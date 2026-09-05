@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Data (downloaded, not versioned)
+data/cifar-10-batches-py/
+data/cifar-10-python.tar.gz
+data/CIFAR-10-C/
+data/CIFAR-10-C.tar
+data/*.tar
+data/*.tar.gz
+
+# Experiment outputs
+results/**/checkpoints/
+results/**/*.pt
+results/**/*.pth
+*.ckpt
+
+# Keep result CSV/JSON summaries but ignore large artifacts by default
+# (comment the lines above if you want to version checkpoints)
+
+# wandb
+wandb/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
