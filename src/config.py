@@ -69,6 +69,13 @@ class KDConfig:
 
 
 @dataclass
+class DebugConfig:
+    """Knobs for fast smoke tests. All default to 0 = "no limit"."""
+    limit_train_batches: int = 0
+    limit_val_batches: int = 0
+
+
+@dataclass
 class WandbConfig:
     enabled: bool = False              # default OFF; everything works offline
     project: str = "student-teacher-landscape"
@@ -96,6 +103,7 @@ class Config:
     schedule: ScheduleConfig = field(default_factory=ScheduleConfig)
     kd: KDConfig = field(default_factory=KDConfig)
     wandb: WandbConfig = field(default_factory=WandbConfig)
+    debug: DebugConfig = field(default_factory=DebugConfig)
 
     # ------------------------------------------------------------------ #
     def resolve_run_name(self) -> str:
