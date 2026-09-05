@@ -55,6 +55,8 @@ student-teacher-landscape/
 │   ├── data.py              # CIFAR-10 (ID) and CIFAR-10-C (OOD) loaders
 │   ├── config.py            # typed dataclass config schema + YAML loader
 │   ├── utils.py             # seeding, env capture, CSV/JSON logging
+│   ├── engine.py            # shared train-epoch / eval loops, optim + sched
+│   ├── checkpoint.py        # checkpoint save/load (+ rebuild model from ckpt)
 │   ├── train.py             # train teacher OR distill student (one entry point)
 │   ├── evaluate.py          # ID + OOD evaluation
 │   └── measure_geometry.py  # sharpness + Hessian measurement
@@ -68,7 +70,9 @@ student-teacher-landscape/
 > **Implementation status (built stage-by-stage):**
 > - [x] Stage 1 — models (`models/resnet.py`), data loaders (`data.py`),
 >   config system (`config.py`), seeding + logging (`utils.py`)
-> - [ ] Stage 2 — KD loss + training/distillation script (`distillation/kd.py`, `train.py`)
+> - [x] Stage 2 — KD loss (`distillation/kd.py`), shared train/eval loops
+>   (`engine.py`), checkpointing (`checkpoint.py`), training + distillation
+>   entry point (`train.py`)
 > - [ ] Stage 3 — CIFAR-10-C downloader + evaluation (`data/download_cifar10c.py`, `evaluate.py`)
 > - [ ] Stage 4 — geometry module (`geometry/*`, `measure_geometry.py`)
 > - [ ] Stage 5 — pilot configs (`configs/*.yaml`) + run scripts (`scripts/`)
