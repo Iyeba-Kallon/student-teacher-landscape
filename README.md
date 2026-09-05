@@ -53,7 +53,8 @@ student-teacher-landscape/
 │   │   ├── sharpness.py     # adaptive (m-)sharpness
 │   │   └── hessian.py       # Hessian trace + top eigenvalue via PyHessian
 │   ├── data.py              # CIFAR-10 (ID) and CIFAR-10-C (OOD) loaders
-│   ├── utils.py             # seeding, config loading, CSV/JSON logging
+│   ├── config.py            # typed dataclass config schema + YAML loader
+│   ├── utils.py             # seeding, env capture, CSV/JSON logging
 │   ├── train.py             # train teacher OR distill student (one entry point)
 │   ├── evaluate.py          # ID + OOD evaluation
 │   └── measure_geometry.py  # sharpness + Hessian measurement
@@ -64,10 +65,16 @@ student-teacher-landscape/
 └── README.md
 ```
 
-> **Implementation status:** the folder structure, README, configs, and
-> `requirements.txt` are in place. The `src/` and `data/` modules currently carry
-> documented placeholders (docstring + `NotImplementedError`); they are filled in
-> in the following steps of this build.
+> **Implementation status (built stage-by-stage):**
+> - [x] Stage 1 — models (`models/resnet.py`), data loaders (`data.py`),
+>   config system (`config.py`), seeding + logging (`utils.py`)
+> - [ ] Stage 2 — KD loss + training/distillation script (`distillation/kd.py`, `train.py`)
+> - [ ] Stage 3 — CIFAR-10-C downloader + evaluation (`data/download_cifar10c.py`, `evaluate.py`)
+> - [ ] Stage 4 — geometry module (`geometry/*`, `measure_geometry.py`)
+> - [ ] Stage 5 — pilot configs (`configs/*.yaml`) + run scripts (`scripts/`)
+>
+> Modules for not-yet-built stages carry documented placeholders
+> (docstring + `NotImplementedError`).
 
 ---
 
