@@ -136,10 +136,15 @@ class CIFAR10C(Dataset):
                 f"Run `python data/download_cifar10c.py --dest {root}` first."
             )
 
-        images = np.load(images_path)          # (50000, 32, 32, 3) uint8
-        labels = np.load(labels_path)          # (50000,) int
-        lo = (severity - 1) * 10000
-        hi = severity * 10000
+        images = np.load(images_path)          # (N, 32, 32, 3) uint8, N = 5 * per
+        labels = np.load(labels_path)          # (N,) int
+        if len(images) % 5 != 0 or len(images) != len(labels):
+            raise ValueError(
+                f"malformed CIFAR-10-C arrays: images={images.shape} labels={labels.shape}"
+            )
+        per = len(images) // 5                 # 10000 for the official dataset
+        lo = (severity - 1) * per
+        hi = severity * per
         self.images = images[lo:hi]
         self.labels = labels[lo:hi].astype(np.int64)
         self.transform = transform or eval_transform()

@@ -125,7 +125,7 @@ class RunLogger:
     """
 
     def __init__(self, run_dir: str | Path, *, config: Config | None = None,
-                 use_wandb: bool = False) -> None:
+                 use_wandb: bool = False, append: bool = False) -> None:
         self.run_dir = Path(run_dir)
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.metrics_path = self.run_dir / "metrics.csv"
@@ -133,7 +133,23 @@ class RunLogger:
 
         self._rows: list[dict[str, Any]] = []
         self._fieldnames: list[str] = []
-        self.summary: dict[str, Any] = {"env": capture_env()}
+        self.summary: dict[str, Any] = {}
+
+        # In append mode, load any existing metrics/summary so a later stage
+        # (e.g. evaluate.py, measure_geometry.py) extends the same files
+        # instead of clobbering the training history.
+        if append and self.metrics_path.exists():
+            with open(self.metrics_path, "r", newline="", encoding="utf-8") as fh:
+                self._rows = list(csv.DictReader(fh))
+            for row in self._rows:
+                for k in row:
+                    if k not in self._fieldnames:
+                        self._fieldnames.append(k)
+        if append and self.summary_path.exists():
+            with open(self.summary_path, "r", encoding="utf-8") as fh:
+                self.summary = json.load(fh)
+
+        self.summary.setdefault("env", capture_env())
         if config is not None:
             self.summary["config"] = config_to_dict(config)
             self.summary["run_name"] = config.resolve_run_name()

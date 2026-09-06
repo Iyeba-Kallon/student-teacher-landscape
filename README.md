@@ -73,7 +73,8 @@ student-teacher-landscape/
 > - [x] Stage 2 — KD loss (`distillation/kd.py`), shared train/eval loops
 >   (`engine.py`), checkpointing (`checkpoint.py`), training + distillation
 >   entry point (`train.py`)
-> - [ ] Stage 3 — CIFAR-10-C downloader + evaluation (`data/download_cifar10c.py`, `evaluate.py`)
+> - [x] Stage 3 — CIFAR-10-C downloader (`data/download_cifar10c.py`) +
+>   ID/OOD evaluation with mCE + aggregation (`evaluate.py`)
 > - [ ] Stage 4 — geometry module (`geometry/*`, `measure_geometry.py`)
 > - [ ] Stage 5 — pilot configs (`configs/*.yaml`) + run scripts (`scripts/`)
 >
