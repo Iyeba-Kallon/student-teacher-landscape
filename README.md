@@ -75,7 +75,8 @@ student-teacher-landscape/
 >   entry point (`train.py`)
 > - [x] Stage 3 — CIFAR-10-C downloader (`data/download_cifar10c.py`) +
 >   ID/OOD evaluation with mCE + aggregation (`evaluate.py`)
-> - [ ] Stage 4 — geometry module (`geometry/*`, `measure_geometry.py`)
+> - [x] Stage 4 — geometry module (`geometry/{bn_utils,sharpness,hessian}.py`)
+>   + measurement entry point (`measure_geometry.py`)
 > - [ ] Stage 5 — pilot configs (`configs/*.yaml`) + run scripts (`scripts/`)
 >
 > Modules for not-yet-built stages carry documented placeholders
@@ -117,7 +118,21 @@ because it matters for correctness.
 
 * **Data used for geometry:** a **fixed, seeded 2,000-example subset** of the
   CIFAR-10 *training* set, identical for every checkpoint, so curvature
-  comparisons are fair.
+  comparisons are fair. It is passed to PyHessian as a `DataLoader` (batch size
+  = the sharpness micro-batch `m`) so Hessian-vector products are averaged over
+  its mini-batches.
+
+* **Ascent-direction maximizer** (sharpness inner problem): with the
+  linearization `L_B(w+ε) ≈ L_B(w) + g·ε` and `u = T_w⁻¹ε`, the constrained
+  maximizer is `ε* = ρ · T_w² g / ‖T_w g‖₂` (global L2 norm over all params).
+  One ascent step per micro-batch; parameters are perturbed, the perturbed loss
+  measured, then parameters are restored exactly.
+
+* PyHessian (v0.1) emits some deprecation warnings (`torch.autograd.Variable`,
+  `only_inputs=`) — harmless. On GPU, `use_deterministic_algorithms` runs in
+  `warn_only` mode because PyHessian's double-backward hits a few
+  non-deterministic cuDNN kernels; trace/eigenvalue are stochastic estimators
+  anyway and are seeded for repeatability.
 
 ### 3.2 Precision
 
