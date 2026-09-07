@@ -1,0 +1,65 @@
+{
+  "env": {
+    "timestamp_utc": "2026-09-07T20:49:48.582424+00:00",
+    "python": "3.10.0",
+    "platform": "Windows-10-10.0.26200-SP0",
+    "torch": "2.3.1+cpu",
+    "numpy": "1.26.4",
+    "cuda_available": false,
+    "git_commit": "80399fd5969b10a1dbbde1e803178330574ec39f"
+  },
+  "config": {
+    "mode": "teacher",
+    "precision": "fp32",
+    "seed": 0,
+    "run_name": null,
+    "results_dir": "results_smoke",
+    "deterministic": true,
+    "model": {
+      "arch": "resnet18_cifar",
+      "width_mult": 1.0,
+      "num_classes": 10
+    },
+    "data": {
+      "dataset": "cifar10",
+      "data_dir": "data",
+      "batch_size": 128,
+      "num_workers": 0
+    },
+    "optim": {
+      "name": "sgd",
+      "lr": 0.1,
+      "momentum": 0.9,
+      "weight_decay": 0.0005,
+      "nesterov": false
+    },
+    "schedule": {
+      "name": "cosine",
+      "epochs": 1,
+      "warmup_epochs": 0,
+      "milestones": [
+        100,
+        150
+      ],
+      "gamma": 0.1
+    },
+    "kd": {
+      "temperature": 4.0,
+      "alpha": 0.9,
+      "teacher_checkpoint": null,
+      "teacher_arch": "resnet18_cifar",
+      "teacher_width_mult": 1.0
+    },
+    "wandb": {
+      "enabled": false,
+      "project": "student-teacher-landscape",
+      "entity": null
+    },
+    "debug": {
+      "limit_train_batches": 8,
+      "limit_val_batches": 4
+    }
+  },
+  "run_name": "teacher_fp32_s0",
+  "model_params": 11173962
+}

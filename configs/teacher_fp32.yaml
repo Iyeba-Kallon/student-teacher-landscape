@@ -1,5 +1,9 @@
 # Pilot teacher — ResNet-18 (width 1.0), full fp32 training.
 # Run once per seed:  python -m src.train --config configs/teacher_fp32.yaml --seed {0,1,2}
+#
+# NOTE: epochs reduced 200 -> 100 for the reduced CPU pilot (phase 1). The AMP
+# configs stay at 200; bump this back to 200 for the full GPU pilot so fp32 and
+# AMP share the same training budget.
 mode: teacher
 precision: fp32          # training-time only; geometry/eval are always fp32
 seed: 0                  # overridden by --seed
@@ -26,7 +30,7 @@ optim:
 
 schedule:
   name: cosine
-  epochs: 200
+  epochs: 100          # reduced CPU pilot (phase 1); 200 for the full GPU pilot
   warmup_epochs: 0
 
 wandb:

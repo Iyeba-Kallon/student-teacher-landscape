@@ -207,6 +207,13 @@ temperature `T = 4`, `alpha = 0.9` (KD weight), teacher frozen
 
 **Runs:** 3 models × 2 precisions × 3 seeds = **18 training runs** for the pilot.
 
+> **Phase 1 (reduced CPU pilot).** `configs/teacher_fp32.yaml` and
+> `configs/student_w0.5_fp32.yaml` are currently set to **100 epochs** for a
+> first-signal run on CPU: teacher + `w0.5` student, fp32 only, seeds `{0, 1}`
+> (4 training runs). It does **not** cover precision robustness (AMP) or the
+> `w0.25` width. Restore `epochs: 200` in those two files — and run the AMP
+> configs + seed 2 + `w0.25` — for the full pilot above.
+
 ---
 
 ## 5. Installation
