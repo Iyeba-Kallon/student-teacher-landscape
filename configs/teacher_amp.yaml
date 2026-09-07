@@ -1,0 +1,34 @@
+# Pilot teacher — ResNet-18 (width 1.0), mixed-precision (AMP) training.
+# Identical to teacher_fp32.yaml except precision: amp. Requires a CUDA device.
+# Run once per seed:  python -m src.train --config configs/teacher_amp.yaml --seed {0,1,2}
+mode: teacher
+precision: amp          # torch.cuda.amp autocast + GradScaler for the training loop only
+seed: 0
+results_dir: results
+deterministic: true
+
+model:
+  arch: resnet18_cifar
+  width_mult: 1.0
+  num_classes: 10
+
+data:
+  dataset: cifar10
+  data_dir: data
+  batch_size: 128
+  num_workers: 4
+
+optim:
+  name: sgd
+  lr: 0.1
+  momentum: 0.9
+  weight_decay: 0.0005
+  nesterov: false
+
+schedule:
+  name: cosine
+  epochs: 200
+  warmup_epochs: 0
+
+wandb:
+  enabled: false
