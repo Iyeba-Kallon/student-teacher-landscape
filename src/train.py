@@ -88,6 +88,14 @@ def main() -> None:
         cfg.seed = args.seed
     if args.wandb:
         cfg.wandb.enabled = True
+
+    # Resolve {precision}/{seed} placeholders in the teacher path AFTER the
+    # --seed override, so `--seed 1` distils from the matching teacher seed.
+    if cfg.mode == "student" and cfg.kd.teacher_checkpoint:
+        cfg.kd.teacher_checkpoint = cfg.kd.teacher_checkpoint.format(
+            precision=cfg.precision, seed=cfg.seed,
+            width_mult=cfg.model.width_mult, results_dir=cfg.results_dir,
+        )
     cfg.validate()
 
     set_seed(cfg.seed, deterministic=cfg.deterministic)
