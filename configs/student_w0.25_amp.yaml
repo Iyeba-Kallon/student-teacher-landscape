@@ -1,0 +1,41 @@
+# Pilot student — ResNet-18 width 0.25, distilled with AMP from the AMP teacher.
+# Requires a CUDA device.
+# Run once per seed:  python -m src.train --config configs/student_w0.25_amp.yaml --seed {0,1,2}
+mode: student
+precision: amp
+seed: 0
+results_dir: results
+deterministic: true
+
+model:
+  arch: resnet18_cifar
+  width_mult: 0.25
+  num_classes: 10
+
+data:
+  dataset: cifar10
+  data_dir: data
+  batch_size: 128
+  num_workers: 4
+
+optim:
+  name: sgd
+  lr: 0.1
+  momentum: 0.9
+  weight_decay: 0.0005
+  nesterov: false
+
+schedule:
+  name: cosine
+  epochs: 200
+  warmup_epochs: 0
+
+kd:
+  temperature: 4.0
+  alpha: 0.9
+  teacher_checkpoint: "{results_dir}/teacher_{precision}_s{seed}/checkpoints/best.pt"
+  teacher_arch: resnet18_cifar
+  teacher_width_mult: 1.0
+
+wandb:
+  enabled: false

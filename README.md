@@ -40,7 +40,10 @@ correlates with *"student sits in a flatter minimum"*.
 
 ```
 student-teacher-landscape/
-├── configs/                 # one YAML per run (teacher / students × fp32 / amp)
+├── configs/                 # one YAML per run type (teacher / students × fp32 / amp)
+│   ├── teacher_fp32.yaml      teacher_amp.yaml
+│   ├── student_w0.5_fp32.yaml  student_w0.5_amp.yaml
+│   └── student_w0.25_fp32.yaml student_w0.25_amp.yaml
 ├── data/
 │   └── download_cifar10c.py # downloads + unpacks the official Zenodo tarball
 ├── src/
@@ -60,9 +63,12 @@ student-teacher-landscape/
 │   ├── train.py             # train teacher OR distill student (one entry point)
 │   ├── evaluate.py          # ID + OOD evaluation
 │   └── measure_geometry.py  # sharpness + Hessian measurement
-├── scripts/                 # thin shell/python wrappers to run the whole pilot
-├── results/                 # run outputs: checkpoints + metrics.csv + summary.json
-├── notebooks/               # analysis: flatness vs. OOD-gain
+├── scripts/
+│   ├── run_pilot.sh / .ps1  # full pilot: train → evaluate → geometry → aggregate
+│   └── smoke.sh / .ps1      # ~2 min end-to-end sanity check (results_smoke/)
+├── results/                 # run outputs: checkpoints + metrics.csv + summary.json + eval/geometry json
+├── notebooks/
+│   └── analysis.ipynb       # flatness vs. OOD-gain, fp32-vs-AMP robustness
 ├── requirements.txt
 └── README.md
 ```
@@ -77,10 +83,12 @@ student-teacher-landscape/
 >   ID/OOD evaluation with mCE + aggregation (`evaluate.py`)
 > - [x] Stage 4 — geometry module (`geometry/{bn_utils,sharpness,hessian}.py`)
 >   + measurement entry point (`measure_geometry.py`)
-> - [ ] Stage 5 — pilot configs (`configs/*.yaml`) + run scripts (`scripts/`)
+> - [x] Stage 5 — pilot configs (`configs/*.yaml`), run scripts
+>   (`scripts/run_pilot.{sh,ps1}`, `scripts/smoke.{sh,ps1}`), analysis notebook
 >
-> Modules for not-yet-built stages carry documented placeholders
-> (docstring + `NotImplementedError`).
+> **The pilot is fully implemented.** Adding feature distillation, more widths,
+> or CIFAR-100 means a new module + a new config — the scripts and analysis
+> generalize unchanged.
 
 ---
 
@@ -242,8 +250,24 @@ the data is already present.
 
 ## 7. Run the full pilot end-to-end
 
-Every command writes to `results/<run_name>/`. Run names encode role, width,
-precision, and seed, e.g. `teacher_fp32_s0`, `student_w0.5_amp_s2`.
+**One command** (does Steps 0–5 below in order):
+
+```bash
+scripts/run_pilot.sh                 # Linux/macOS  (SKIP_AMP=1 on a CPU-only box)
+```
+```powershell
+./scripts/run_pilot.ps1              # Windows      (-SkipAmp on a CPU-only box)
+```
+
+Quick sanity check first (~2 min, 1 epoch, writes to `results_smoke/`):
+`scripts/smoke.sh` / `./scripts/smoke.ps1`.
+
+---
+
+Or run the steps by hand. Every command writes to `results/<run_name>/`; run
+names encode role, width, precision, and seed, e.g. `teacher_fp32_s0`,
+`student_w0.5_amp_s2`. Student configs resolve their teacher checkpoint from the
+run's own `{precision}` and `{seed}`, so `--seed 1` distils from teacher seed 1.
 
 ```bash
 # ============================================================
@@ -299,9 +323,6 @@ python -m src.measure_geometry --all --results-dir results/
 python -m src.evaluate --aggregate --results-dir results/ --out results/pilot_summary.csv
 jupyter notebook notebooks/analysis.ipynb
 ```
-
-`scripts/` contains wrappers (`scripts/run_pilot.sh`, `scripts/run_pilot.ps1`)
-that execute Steps 1–5 in order.
 
 ---
 
