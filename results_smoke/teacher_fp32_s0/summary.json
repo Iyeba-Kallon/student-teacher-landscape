@@ -61,5 +61,9 @@
     }
   },
   "run_name": "teacher_fp32_s0",
-  "model_params": 11173962
+  "model_params": 11173962,
+  "best_id_acc": 0.111328125,
+  "best_epoch": 0,
+  "final_id_acc": 0.111328125,
+  "train_seconds": 59.33357048034668
 }
