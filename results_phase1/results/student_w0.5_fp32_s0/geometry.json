@@ -1,0 +1,50 @@
+{
+  "run_name": "student_w0.5_fp32_s0",
+  "checkpoint": "results/student_w0.5_fp32_s0/checkpoints/best.pt",
+  "arch": "resnet18_cifar",
+  "width_mult": 0.5,
+  "mode": "student",
+  "precision": "fp32",
+  "seed": 0,
+  "settings": {
+    "measured_precision": "fp32",
+    "trained_precision": "fp32",
+    "bn": "eval + frozen running stats (momentum=0)",
+    "geometry_subset": {
+      "split": "cifar10_train",
+      "n": 2000,
+      "subset_seed": 1234
+    },
+    "sharpness": {
+      "kind": "adaptive_m_sharpness",
+      "rho": 0.05,
+      "eta": 0.01,
+      "m": 128,
+      "ascent_steps": 1,
+      "n_batches": null
+    },
+    "hessian": {
+      "library": "pyhessian",
+      "trace_estimator": "hutchinson",
+      "trace_max_iter": 100,
+      "eig_method": "power_iteration",
+      "eig_max_iter": 100,
+      "seed": 0
+    }
+  },
+  "hessian_top_eigenvalue": 23.982540130615234,
+  "hessian_eigenvalues_top_n": [
+    23.982540130615234
+  ],
+  "hessian_trace": 268.18930875338043,
+  "hessian_trace_std": 61.41664769792522,
+  "hessian_trace_n_iter": 13,
+  "adaptive_sharpness": 0.031014934182167053,
+  "sharpness_std": 0.00907962303608656,
+  "sharpness_min": 0.01559039019048214,
+  "sharpness_max": 0.053187716752290726,
+  "rho": 0.05,
+  "eta": 0.01,
+  "adaptive": true,
+  "n_micro_batches": 16
+}

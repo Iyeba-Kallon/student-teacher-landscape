@@ -1,0 +1,113 @@
+{
+  "env": {
+    "timestamp_utc": "2026-09-08T13:17:57.011456+00:00",
+    "python": "3.13.15",
+    "platform": "Linux-6.6.122+-x86_64-with-glibc2.35",
+    "torch": "2.11.0+cu128",
+    "numpy": "2.1.3",
+    "cuda_available": true,
+    "git_commit": "f8169da2ae92e8c9c37aa4af4c3e0f9f1c273f33",
+    "cuda": "12.8",
+    "cudnn": 91900,
+    "gpu_name": "Tesla T4",
+    "gpu_count": 1
+  },
+  "config": {
+    "mode": "teacher",
+    "precision": "fp32",
+    "seed": 1,
+    "run_name": null,
+    "results_dir": "results",
+    "deterministic": true,
+    "model": {
+      "arch": "resnet18_cifar",
+      "width_mult": 1.0,
+      "num_classes": 10
+    },
+    "data": {
+      "dataset": "cifar10",
+      "data_dir": "data",
+      "batch_size": 128,
+      "num_workers": 4
+    },
+    "optim": {
+      "name": "sgd",
+      "lr": 0.1,
+      "momentum": 0.9,
+      "weight_decay": 0.0005,
+      "nesterov": false
+    },
+    "schedule": {
+      "name": "cosine",
+      "epochs": 30,
+      "warmup_epochs": 0,
+      "milestones": [
+        100,
+        150
+      ],
+      "gamma": 0.1
+    },
+    "kd": {
+      "temperature": 4.0,
+      "alpha": 0.9,
+      "teacher_checkpoint": null,
+      "teacher_arch": "resnet18_cifar",
+      "teacher_width_mult": 1.0
+    },
+    "wandb": {
+      "enabled": false,
+      "project": "student-teacher-landscape",
+      "entity": null
+    },
+    "debug": {
+      "limit_train_batches": 0,
+      "limit_val_batches": 0
+    }
+  },
+  "run_name": "teacher_fp32_s1",
+  "model_params": 11173962,
+  "best_id_acc": 0.9354,
+  "best_epoch": 29,
+  "final_id_acc": 0.9354,
+  "train_seconds": 1479.1809730529785,
+  "evaluation": {
+    "id_acc": 0.9354,
+    "id_error": 0.06459999999999999,
+    "ood_acc_mean": 0.7230453333333333,
+    "ood_error_mean": 0.2769546666666667,
+    "ood_acc_by_severity": {
+      "1": 0.8595266666666668,
+      "2": 0.8043933333333333,
+      "3": 0.7401,
+      "4": 0.6649533333333333,
+      "5": 0.5462533333333333
+    },
+    "ood_acc_by_corruption": {
+      "gaussian_noise": 0.45705999999999997,
+      "shot_noise": 0.57836,
+      "impulse_noise": 0.5590200000000001,
+      "defocus_blur": 0.8031200000000001,
+      "glass_blur": 0.50916,
+      "motion_blur": 0.75556,
+      "zoom_blur": 0.7628600000000001,
+      "snow": 0.80084,
+      "frost": 0.75622,
+      "fog": 0.86592,
+      "brightness": 0.9170999999999999,
+      "contrast": 0.74228,
+      "elastic_transform": 0.8285199999999999,
+      "pixelate": 0.72182,
+      "jpeg_compression": 0.78784
+    }
+  },
+  "geometry": {
+    "adaptive_sharpness": 0.04052622243762016,
+    "sharpness_std": 0.015632353723049164,
+    "rho": 0.05,
+    "eta": 0.01,
+    "adaptive": true,
+    "hessian_trace": 506.8628205798921,
+    "hessian_trace_std": 108.04928420828378,
+    "hessian_top_eigenvalue": 36.461856842041016
+  }
+}
