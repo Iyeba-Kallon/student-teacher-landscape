@@ -1,8 +1,5 @@
 # Teacher, ResNet-18 width 1.0, fp32.
-#   python -m src.train --config configs/teacher_fp32.yaml --seed {0,1,2}
-#
-# epochs is 30 for the phase-1 signal check. Set it back to 200 for the full
-# pilot (the AMP configs are already at 200).
+#   python -m src.train --config configs/teacher_fp32.yaml --seed {0,1,2,3,4}
 
 mode: teacher
 precision: fp32
@@ -30,7 +27,7 @@ optim:
 
 schedule:
   name: cosine
-  epochs: 30
+  epochs: 200
   warmup_epochs: 0
 
 wandb:

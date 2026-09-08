@@ -19,6 +19,17 @@ SKIP_AMP="${SKIP_AMP:-0}"
 if [ "$SKIP_AMP" = "1" ]; then PRECISIONS="fp32"; else PRECISIONS="fp32 amp"; fi
 STUDENTS="w0.5 w0.25"
 
+# Skip a run only when its checkpoints/best.pt exists, so a crash-restart resumes
+# rather than skipping unfinished work (an empty results/<run>/ does not count).
+run_train () {  # $1 config, $2 seed, $3 run_name
+  if [ -f "$RESULTS_DIR/$3/checkpoints/best.pt" ]; then
+    echo "-- skip $3 (done) --"
+  else
+    echo "-- $3 --"
+    python -m src.train --config "$1" --seed "$2"
+  fi
+}
+
 echo "=== STEP 0: data ==="
 if [ "$SKIP_DATA" != "1" ]; then
   python data/download_cifar10c.py --dest data/
@@ -27,8 +38,7 @@ fi
 echo; echo "=== STEP 1: teachers ==="
 for p in $PRECISIONS; do
   for s in $SEEDS; do
-    echo "-- teacher $p seed $s --"
-    python -m src.train --config "configs/teacher_${p}.yaml" --seed "$s"
+    run_train "configs/teacher_${p}.yaml" "$s" "teacher_${p}_s${s}"
   done
 done
 
@@ -36,8 +46,7 @@ echo; echo "=== STEP 2: students (distillation) ==="
 for w in $STUDENTS; do
   for p in $PRECISIONS; do
     for s in $SEEDS; do
-      echo "-- student $w $p seed $s --"
-      python -m src.train --config "configs/student_${w}_${p}.yaml" --seed "$s"
+      run_train "configs/student_${w}_${p}.yaml" "$s" "student_${w}_${p}_s${s}"
     done
   done
 done
