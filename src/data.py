@@ -8,6 +8,7 @@ no augmentation, the same images for every model. CIFAR-10-C is loaded from the
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Iterator
 
@@ -16,6 +17,11 @@ from torch.utils.data import DataLoader, Dataset, Subset
 from torchvision import datasets, transforms
 
 from .utils import make_generator, seed_worker
+
+
+def _clamp_workers(n: int) -> int:
+    """Don't ask for more DataLoader workers than the machine has CPUs."""
+    return max(0, min(n, os.cpu_count() or 0))
 
 CIFAR10_MEAN = (0.4914, 0.4822, 0.4465)
 CIFAR10_STD = (0.2470, 0.2435, 0.2616)
@@ -57,6 +63,7 @@ def build_cifar10_loaders(
 ) -> tuple[DataLoader, DataLoader]:
     """Return (train_loader, test_loader) for CIFAR-10."""
     data_dir = str(data_dir)
+    num_workers = _clamp_workers(num_workers)
     train_set = datasets.CIFAR10(data_dir, train=True, download=download,
                                  transform=train_transform())
     test_set = datasets.CIFAR10(data_dir, train=False, download=download,
@@ -147,7 +154,7 @@ def build_cifar10c_loader(
 ) -> DataLoader:
     ds = CIFAR10C(data_dir, corruption, severity)
     return DataLoader(ds, batch_size=batch_size, shuffle=False,
-                      num_workers=num_workers, pin_memory=True)
+                      num_workers=_clamp_workers(num_workers), pin_memory=True)
 
 
 def iter_cifar10c_loaders(

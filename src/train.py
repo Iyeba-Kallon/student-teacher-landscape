@@ -105,7 +105,7 @@ def main() -> None:
 
     optimizer = build_optimizer(model, cfg.optim)
     scheduler = build_scheduler(optimizer, cfg.schedule)
-    scaler = torch.cuda.amp.GradScaler(enabled=amp)
+    scaler = torch.amp.GradScaler("cuda", enabled=amp)
 
     best_acc, best_epoch = 0.0, -1
     t0 = time.time()

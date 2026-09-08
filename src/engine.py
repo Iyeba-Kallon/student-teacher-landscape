@@ -59,7 +59,7 @@ def train_one_epoch(
     loader: DataLoader,
     optimizer: Optimizer,
     device: torch.device,
-    scaler: "torch.cuda.amp.GradScaler",
+    scaler: "torch.amp.GradScaler",
     amp: bool,
     teacher: nn.Module | None = None,
     kd_temperature: float = 4.0,
@@ -90,7 +90,7 @@ def train_one_epoch(
         bs = targets.size(0)
 
         optimizer.zero_grad(set_to_none=True)
-        with torch.cuda.amp.autocast(enabled=amp):
+        with torch.amp.autocast("cuda", enabled=amp):
             logits = model(inputs)
             if teacher is not None:
                 with torch.no_grad():
