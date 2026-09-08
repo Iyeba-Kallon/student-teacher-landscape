@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Fast end-to-end sanity check (~2 min on CPU): 1 epoch, a handful of batches,
-# tiny geometry settings. Writes to results_smoke/ so it never touches real runs.
+# End-to-end sanity check: 1 epoch, a few batches, tiny geometry settings.
+# A few minutes on CPU. Writes to results_smoke/ so it never touches real runs.
 #
-# Usage:  scripts/smoke.sh
+# Usage: bash scripts/smoke.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export PYTHONPATH=.

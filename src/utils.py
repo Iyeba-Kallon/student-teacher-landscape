@@ -1,7 +1,6 @@
-"""Shared utilities: seeding, environment capture, and offline CSV/JSON logging.
+"""Seeding, environment capture, and file-based logging.
 
-The config system lives in ``src/config.py``; this module re-exports
-:func:`load_config` for convenience.
+Re-exports load_config from src.config so callers only import one module.
 """
 
 from __future__ import annotations
@@ -19,23 +18,18 @@ from typing import Any
 import numpy as np
 import torch
 
-from .config import Config, config_to_dict, load_config  # noqa: F401  (re-export)
+from .config import Config, config_to_dict, load_config  # noqa: F401
 
 __all__ = ["set_seed", "seed_worker", "make_generator", "capture_env",
            "RunLogger", "load_config", "accuracy"]
 
 
-# --------------------------------------------------------------------------- #
-# Reproducibility
-# --------------------------------------------------------------------------- #
 def set_seed(seed: int, deterministic: bool = True) -> None:
-    """Seed all RNGs and (optionally) request deterministic kernels.
+    """Seed Python, NumPy and torch.
 
-    ``deterministic=True`` sets cuDNN to deterministic/non-benchmark mode and
-    calls ``torch.use_deterministic_algorithms(True, warn_only=True)``. We use
-    ``warn_only`` so ops without a deterministic implementation (e.g. some
-    pooling backward kernels) warn instead of raising — full determinism is not
-    achievable for every op, but training becomes near-reproducible.
+    With deterministic=True this also turns off cuDNN autotuning and asks torch
+    for deterministic kernels. warn_only=True keeps it from raising on the few
+    ops that have no deterministic implementation; those just fall back.
     """
     random.seed(seed)
     np.random.seed(seed)
@@ -45,33 +39,28 @@ def set_seed(seed: int, deterministic: bool = True) -> None:
     if deterministic:
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
-        # Required for deterministic CUBLAS (matmul) on CUDA >= 10.2.
         os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
         try:
             torch.use_deterministic_algorithms(True, warn_only=True)
-        except Exception:  # older torch without warn_only
+        except Exception:
             pass
     else:
         torch.backends.cudnn.benchmark = True
 
 
 def seed_worker(worker_id: int) -> None:
-    """DataLoader ``worker_init_fn`` for reproducible shuffling/augmentation."""
+    """worker_init_fn that reseeds NumPy/random inside each DataLoader worker."""
     worker_seed = torch.initial_seed() % 2**32
     np.random.seed(worker_seed)
     random.seed(worker_seed)
 
 
 def make_generator(seed: int) -> torch.Generator:
-    """A CPU generator to pass as DataLoader ``generator=`` for reproducibility."""
     g = torch.Generator()
     g.manual_seed(seed)
     return g
 
 
-# --------------------------------------------------------------------------- #
-# Environment capture (recorded in every summary.json)
-# --------------------------------------------------------------------------- #
 def _git_commit() -> str | None:
     try:
         out = subprocess.check_output(
@@ -84,7 +73,7 @@ def _git_commit() -> str | None:
 
 
 def capture_env() -> dict[str, Any]:
-    """Snapshot of the software/hardware stack for reproducibility."""
+    """Software/hardware details recorded in every summary.json."""
     info: dict[str, Any] = {
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "python": platform.python_version(),
@@ -104,24 +93,18 @@ def capture_env() -> dict[str, Any]:
     return info
 
 
-# --------------------------------------------------------------------------- #
-# Metrics helper
-# --------------------------------------------------------------------------- #
 @torch.no_grad()
 def accuracy(logits: torch.Tensor, targets: torch.Tensor) -> float:
-    """Top-1 accuracy in [0, 1] for a batch."""
-    preds = logits.argmax(dim=1)
-    return (preds == targets).float().mean().item()
+    return (logits.argmax(dim=1) == targets).float().mean().item()
 
 
-# --------------------------------------------------------------------------- #
-# Offline logging: metrics.csv + summary.json  (+ optional wandb)
-# --------------------------------------------------------------------------- #
 class RunLogger:
-    """Append-only CSV of per-step metrics plus a single rolling summary.json.
+    """Writes metrics.csv (one row per logged step) and summary.json.
 
-    Everything is written to disk immediately and works with no network. wandb
-    is only imported/used when ``use_wandb=True``.
+    Both files are rewritten on every call, so a run is safe to inspect or kill
+    at any point. With append=True the logger loads whatever is already on disk
+    first, so evaluate.py and measure_geometry.py extend a training run's files
+    rather than overwrite them. wandb is only touched when use_wandb=True.
     """
 
     def __init__(self, run_dir: str | Path, *, config: Config | None = None,
@@ -135,9 +118,6 @@ class RunLogger:
         self._fieldnames: list[str] = []
         self.summary: dict[str, Any] = {}
 
-        # In append mode, load any existing metrics/summary so a later stage
-        # (e.g. evaluate.py, measure_geometry.py) extends the same files
-        # instead of clobbering the training history.
         if append and self.metrics_path.exists():
             with open(self.metrics_path, "r", newline="", encoding="utf-8") as fh:
                 self._rows = list(csv.DictReader(fh))
@@ -159,11 +139,10 @@ class RunLogger:
         if use_wandb:
             self._init_wandb(config)
 
-    # -- wandb (optional) --------------------------------------------------- #
     def _init_wandb(self, config: Config | None) -> None:
         try:
-            import wandb  # noqa: PLC0415  (optional dependency)
-        except ImportError as e:  # pragma: no cover
+            import wandb
+        except ImportError as e:
             raise RuntimeError("use_wandb=True but wandb is not installed") from e
         wcfg = getattr(config, "wandb", None)
         self._wandb = wandb.init(
@@ -174,11 +153,8 @@ class RunLogger:
             dir=str(self.run_dir),
         )
 
-    # -- per-step metrics ------------------------------------------------- #
     def log_metrics(self, step: int, split: str, **metrics: float) -> None:
-        """Record one row: ``step, split, <metric>=<value>, ...``."""
-        row: dict[str, Any] = {"step": step, "split": split}
-        row.update({k: v for k, v in metrics.items()})
+        row: dict[str, Any] = {"step": step, "split": split, **metrics}
         self._rows.append(row)
         for k in row:
             if k not in self._fieldnames:
@@ -191,10 +167,8 @@ class RunLogger:
         with open(self.metrics_path, "w", newline="", encoding="utf-8") as fh:
             writer = csv.DictWriter(fh, fieldnames=self._fieldnames)
             writer.writeheader()
-            for r in self._rows:
-                writer.writerow(r)
+            writer.writerows(self._rows)
 
-    # -- rolling summary ------------------------------------------------- #
     def update_summary(self, **kv: Any) -> None:
         self.summary.update(kv)
         self._flush_summary()
@@ -203,7 +177,6 @@ class RunLogger:
         with open(self.summary_path, "w", encoding="utf-8") as fh:
             json.dump(self.summary, fh, indent=2, default=str)
 
-    # -- lifecycle ----------------------------------------------------- #
     def finish(self) -> None:
         self._flush_metrics()
         self._flush_summary()

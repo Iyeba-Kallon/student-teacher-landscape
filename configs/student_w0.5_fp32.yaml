@@ -1,10 +1,10 @@
-# Pilot student — ResNet-18 width 0.5, distilled in fp32 from the fp32 teacher.
-# The teacher checkpoint is resolved per-run: {precision} and {seed} are filled
-# in from this run's precision/seed, so `--seed 1` distills from teacher seed 1.
-# Run once per seed:  python -m src.train --config configs/student_w0.5_fp32.yaml --seed {0,1,2}
+# Student, ResNet-18 width 0.5, distilled from the fp32 teacher.
+#   python -m src.train --config configs/student_w0.5_fp32.yaml --seed {0,1,2}
 #
-# NOTE: epochs reduced 200 -> 30 for the phase-1 signal check on CPU. Keep the
-# teacher at the same budget; restore 200 for the full pilot.
+# teacher_checkpoint is templated: {precision} and {seed} are filled in from this
+# run after --seed is applied, so --seed 1 distils from teacher seed 1.
+# epochs matches the teacher (30 for phase 1, set back to 200 for the full pilot).
+
 mode: student
 precision: fp32
 seed: 0
@@ -31,12 +31,12 @@ optim:
 
 schedule:
   name: cosine
-  epochs: 30           # phase-1 signal check on CPU; restore 200 for the full pilot
+  epochs: 30
   warmup_epochs: 0
 
 kd:
   temperature: 4.0
-  alpha: 0.9              # weight on the soft (distillation) term
+  alpha: 0.9
   teacher_checkpoint: "{results_dir}/teacher_{precision}_s{seed}/checkpoints/best.pt"
   teacher_arch: resnet18_cifar
   teacher_width_mult: 1.0

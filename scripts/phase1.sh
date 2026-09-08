@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 # Phase-1 signal check: teacher + w0.5 student, fp32, seeds {0,1}.
-# (fp32 configs are currently at 30 epochs — see the note in configs/teacher_fp32.yaml.)
+# The fp32 configs run 30 epochs (see configs/teacher_fp32.yaml).
 #
-# Designed for a GPU (Colab/Kaggle T4): the whole thing is ~15-25 min there.
-# On CPU it is not practical for width-1.0 ResNet-18 — use a GPU.
+# Meant for a GPU (Colab/Kaggle T4), where it takes about 15-25 minutes. On CPU
+# a width-1.0 ResNet-18 is far too slow.
 #
-# Resumable: a training run whose checkpoints/best.pt already exists is skipped,
-# so re-running after an interrupted session picks up where it left off.
+# Re-running is safe: a training run with an existing checkpoints/best.pt is
+# skipped, so an interrupted session resumes.
 #
 # Env overrides:
-#   SEEDS="0 1"           seeds to run
-#   GEOM_ARGS="..."       extra flags for measure_geometry
-#                         (e.g. "--n-geom 1000 --hessian-trace-iter 30" to speed up)
+#   SEEDS="0 1"       seeds to run
+#   GEOM_ARGS="..."   extra measure_geometry flags, e.g.
+#                     "--n-geom 1000 --hessian-trace-iter 30" to go faster
 #
-# Usage:  bash scripts/phase1.sh      (assumes CIFAR-10-C already downloaded)
+# Usage: bash scripts/phase1.sh   (CIFAR-10-C must already be downloaded)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export PYTHONPATH=.
@@ -41,7 +41,7 @@ for s in $SEEDS; do run_train configs/student_w0.5_fp32.yaml "$s" "student_w0.5_
 echo "[evaluate] @ $(date)" | tee -a "$LOG"
 python -u -m src.evaluate --all --results-dir "$RD" 2>&1 | tee -a "$LOG"
 
-echo "[geometry] @ $(date)  (args: ${GEOM_ARGS:-<locked defaults>})" | tee -a "$LOG"
+echo "[geometry] @ $(date)  (args: ${GEOM_ARGS:-default})" | tee -a "$LOG"
 python -u -m src.measure_geometry --all --results-dir "$RD" $GEOM_ARGS 2>&1 | tee -a "$LOG"
 
 echo "[aggregate] @ $(date)" | tee -a "$LOG"

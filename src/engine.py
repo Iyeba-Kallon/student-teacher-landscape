@@ -1,14 +1,10 @@
-"""Training / evaluation loops shared by the scripts.
+"""Training and evaluation loops.
 
-Kept separate from ``train.py`` so ``evaluate.py`` and tests can reuse the same
-classifier-evaluation code, and so the fp32-vs-AMP branch lives in exactly one
-place.
+Separate from train.py so evaluate.py can reuse evaluate_classifier and so the
+fp32/AMP branch only exists once.
 """
 
 from __future__ import annotations
-
-import math
-from typing import Any
 
 import torch
 import torch.nn as nn
@@ -20,44 +16,35 @@ from .config import OptimConfig, ScheduleConfig
 from .distillation.kd import kd_loss
 
 
-# --------------------------------------------------------------------------- #
-# Optimizer / scheduler
-# --------------------------------------------------------------------------- #
 def build_optimizer(model: nn.Module, cfg: OptimConfig) -> Optimizer:
     if cfg.name.lower() != "sgd":
-        raise ValueError(f"Only 'sgd' is supported in the pilot, got {cfg.name!r}")
+        raise ValueError(f"only sgd is supported, got {cfg.name!r}")
     return torch.optim.SGD(
-        model.parameters(),
-        lr=cfg.lr,
-        momentum=cfg.momentum,
-        weight_decay=cfg.weight_decay,
-        nesterov=cfg.nesterov,
+        model.parameters(), lr=cfg.lr, momentum=cfg.momentum,
+        weight_decay=cfg.weight_decay, nesterov=cfg.nesterov,
     )
 
 
 def build_scheduler(optimizer: Optimizer, cfg: ScheduleConfig):
-    """Per-epoch LR scheduler. Call ``scheduler.step()`` once per epoch."""
+    """LR scheduler stepped once per epoch."""
     name = cfg.name.lower()
-    total = cfg.epochs
     warmup = max(0, cfg.warmup_epochs)
 
     if name == "constant":
         return torch.optim.lr_scheduler.LambdaLR(optimizer, lambda _: 1.0)
-
     if name == "cosine":
         main = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=max(1, total - warmup)
+            optimizer, T_max=max(1, cfg.epochs - warmup)
         )
     elif name == "multistep":
         main = torch.optim.lr_scheduler.MultiStepLR(
             optimizer, milestones=cfg.milestones, gamma=cfg.gamma
         )
     else:
-        raise ValueError(f"Unknown schedule {cfg.name!r}")
+        raise ValueError(f"unknown schedule {cfg.name!r}")
 
     if warmup == 0:
         return main
-
     warmup_sched = torch.optim.lr_scheduler.LinearLR(
         optimizer, start_factor=1e-3, end_factor=1.0, total_iters=warmup
     )
@@ -66,9 +53,6 @@ def build_scheduler(optimizer: Optimizer, cfg: ScheduleConfig):
     )
 
 
-# --------------------------------------------------------------------------- #
-# Train one epoch
-# --------------------------------------------------------------------------- #
 def train_one_epoch(
     *,
     model: nn.Module,
@@ -84,14 +68,12 @@ def train_one_epoch(
     log_every: int = 0,
     limit_batches: int = 0,
 ) -> dict[str, float]:
-    """One pass over ``loader``.
+    """One pass over the loader.
 
-    - ``teacher is None``  -> plain cross-entropy training (teacher run).
-    - ``teacher`` given     -> KD training; the teacher is assumed already frozen
-      and in eval mode. It is run inside the same autocast context (as frozen
-      inference) but under ``no_grad``.
-    - ``amp`` toggles ``torch.cuda.amp.autocast`` + the GradScaler. With
-      ``amp=False`` both are no-ops, so the fp32 and AMP paths share one body.
+    No teacher means plain cross-entropy (a teacher run). With a teacher (already
+    frozen and in eval mode) it does KD; the teacher runs under no_grad in the
+    same autocast context. When amp is False the autocast and GradScaler calls
+    are no-ops, so both precisions run the same code.
     """
     model.train()
     if teacher is not None:
@@ -115,8 +97,7 @@ def train_one_epoch(
                     teacher_logits = teacher(inputs)
                 out = kd_loss(logits, teacher_logits, targets,
                               kd_temperature, kd_alpha)
-                loss = out.total
-                kd_val, ce_val = out.kd, out.ce
+                loss, kd_val, ce_val = out.total, out.kd, out.ce
             else:
                 loss = F.cross_entropy(logits, targets)
                 kd_val, ce_val = 0.0, float(loss.detach())
@@ -136,7 +117,7 @@ def train_one_epoch(
         running["ce"] += ce_val * bs
         n += bs
 
-        if log_every and (it % log_every == 0):
+        if log_every and it % log_every == 0:
             print(f"  iter {it:4d}/{len(loader)}  loss={loss.item():.4f}  acc={acc:.4f}")
 
     stats = {k: v / max(1, n) for k, v in running.items()}
@@ -146,9 +127,6 @@ def train_one_epoch(
     return stats
 
 
-# --------------------------------------------------------------------------- #
-# Evaluate a classifier (always fp32, no autocast)
-# --------------------------------------------------------------------------- #
 @torch.no_grad()
 def evaluate_classifier(
     model: nn.Module,
@@ -156,11 +134,7 @@ def evaluate_classifier(
     device: torch.device,
     limit_batches: int = 0,
 ) -> dict[str, float]:
-    """Top-1 accuracy / error and mean CE loss over ``loader``.
-
-    Runs in fp32 with ``model.eval()`` and NO autocast — evaluation precision is
-    fixed regardless of how the model was trained.
-    """
+    """Top-1 accuracy, error and mean cross-entropy. Always fp32, no autocast."""
     was_training = model.training
     model.eval()
     total, correct, loss_sum = 0, 0, 0.0

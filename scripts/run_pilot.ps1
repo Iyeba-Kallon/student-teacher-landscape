@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
-  Run the full pilot end-to-end (Sections 5.1 + 5.2): train -> evaluate -> geometry -> aggregate.
+  Full pilot: train -> evaluate -> geometry -> aggregate.
 
 .DESCRIPTION
-  18 training runs = {teacher, student w0.5, student w0.25} x {fp32, amp} x {seeds}.
-  AMP configs require a CUDA device; pass -SkipAmp on a CPU-only machine.
+  18 training runs: {teacher, student w0.5, student w0.25} x {fp32, amp} x seeds.
+  The AMP configs need CUDA; pass -SkipAmp on a CPU-only machine.
 
 .EXAMPLE
   ./scripts/run_pilot.ps1

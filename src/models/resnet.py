@@ -1,19 +1,13 @@
-"""CIFAR-adapted ResNet-18 with width multipliers.
+"""CIFAR ResNet-18 with an adjustable width multiplier.
 
-Reference architecture: He et al. (2016), "Deep Residual Learning for Image
-Recognition", in the CIFAR variant popularised by kuangliu/pytorch-cifar:
-- 3x3 stem convolution, stride 1, **no** max-pool (inputs are 32x32).
-- Four stages of BasicBlocks with num_blocks = (2, 2, 2, 2)  -> "ResNet-18".
-- Global average pool -> linear classifier.
+The 32x32 variant of ResNet-18 (He et al., 2016): a 3x3 stride-1 stem with no
+max-pool, four stages of BasicBlocks (2 blocks each), global average pool, linear
+head. `width_mult` scales every stage; the base widths (64, 128, 256, 512) become
+(32, 64, 128, 256) at 0.5 and (16, 32, 64, 128) at 0.25, rounded to multiples
+of 8.
 
-`width_mult` scales the channel count of every stage. Base stage widths are
-(64, 128, 256, 512); with `width_mult = 0.5` they become (32, 64, 128, 256),
-with `0.25` -> (16, 32, 64, 128). Channels are rounded to a multiple of 8 so
-convolution/BN kernels stay hardware-friendly.
-
-BatchNorm is used throughout. This is exactly why every geometry measurement
-must first freeze BN running statistics and switch to eval mode
-(see `src/geometry/bn_utils.py`).
+Every conv is followed by BatchNorm, which is why the geometry code has to put
+the model in eval mode and freeze the BN stats before measuring anything.
 """
 
 from __future__ import annotations
@@ -27,10 +21,10 @@ RESNET18_NUM_BLOCKS = (2, 2, 2, 2)
 
 
 def _round_width(channels: float, width_mult: float, divisor: int = 8) -> int:
-    """Scale `channels` by `width_mult` and round to the nearest multiple of `divisor`.
+    """Scale channels by width_mult, rounded to a multiple of divisor.
 
-    Never rounds down by more than ~10% (standard "divisible channels" rule from
-    the MobileNet code base), and never returns fewer than `divisor` channels.
+    Uses the MobileNet rounding rule: never drop more than 10% below the target,
+    never go below `divisor` channels.
     """
     scaled = channels * width_mult
     rounded = max(divisor, int(scaled + divisor / 2) // divisor * divisor)
@@ -40,8 +34,6 @@ def _round_width(channels: float, width_mult: float, divisor: int = 8) -> int:
 
 
 class BasicBlock(nn.Module):
-    """Standard ResNet BasicBlock (two 3x3 convs + identity/projection shortcut)."""
-
     expansion = 1
 
     def __init__(self, in_planes: int, planes: int, stride: int = 1) -> None:
@@ -55,7 +47,6 @@ class BasicBlock(nn.Module):
 
         self.shortcut = nn.Sequential()
         if stride != 1 or in_planes != planes * self.expansion:
-            # Projection shortcut when spatial size or channel count changes.
             self.shortcut = nn.Sequential(
                 nn.Conv2d(in_planes, planes * self.expansion, kernel_size=1,
                           stride=stride, bias=False),
@@ -70,7 +61,6 @@ class BasicBlock(nn.Module):
 
 
 class ResNetCIFAR(nn.Module):
-    """CIFAR ResNet with a configurable width multiplier."""
 
     def __init__(self, block: type[nn.Module], num_blocks: tuple[int, ...],
                  num_classes: int = 10, width_mult: float = 1.0) -> None:
@@ -80,11 +70,9 @@ class ResNetCIFAR(nn.Module):
         self.stage_widths = widths
         self.in_planes = widths[0]
 
-        # CIFAR stem: 3x3, stride 1, no pooling.
         self.conv1 = nn.Conv2d(3, widths[0], kernel_size=3, stride=1,
                                padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(widths[0])
-
         self.layer1 = self._make_layer(block, widths[0], num_blocks[0], stride=1)
         self.layer2 = self._make_layer(block, widths[1], num_blocks[1], stride=2)
         self.layer3 = self._make_layer(block, widths[2], num_blocks[2], stride=2)
@@ -125,6 +113,5 @@ class ResNetCIFAR(nn.Module):
 
 
 def resnet18_cifar(num_classes: int = 10, width_mult: float = 1.0) -> ResNetCIFAR:
-    """CIFAR-adapted ResNet-18 with the given width multiplier."""
     return ResNetCIFAR(BasicBlock, RESNET18_NUM_BLOCKS,
                        num_classes=num_classes, width_mult=width_mult)

@@ -1,6 +1,6 @@
-# Pilot student — ResNet-18 width 0.5, distilled with AMP from the AMP teacher.
-# Requires a CUDA device. Teacher checkpoint resolved from {precision}/{seed}.
-# Run once per seed:  python -m src.train --config configs/student_w0.5_amp.yaml --seed {0,1,2}
+# Student, ResNet-18 width 0.5, distilled from the AMP teacher. Needs CUDA.
+#   python -m src.train --config configs/student_w0.5_amp.yaml --seed {0,1,2}
+
 mode: student
 precision: amp
 seed: 0
