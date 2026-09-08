@@ -54,7 +54,12 @@ def prepare_model_for_geometry(model: nn.Module) -> nn.Module:
 def assert_fp32_no_autocast(model: nn.Module | None = None) -> None:
     """Guard: geometry code must never run under autocast, and the model
     (if given) must be fp32."""
-    if torch.is_autocast_enabled() or torch.is_autocast_cpu_enabled():
+    cuda_ac = torch.is_autocast_enabled()
+    try:
+        cpu_ac = torch.is_autocast_cpu_enabled()   # removed in newer torch
+    except AttributeError:                          # pragma: no cover
+        cpu_ac = torch.is_autocast_enabled("cpu")
+    if cuda_ac or cpu_ac:
         raise RuntimeError(
             "Geometry measurements must not run under torch.autocast. "
             "Precision is a training-time variable only."
