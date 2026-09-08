@@ -1,13 +1,11 @@
 #!/usr/bin/env bash
-# Run the full pilot end-to-end (Sections 5.1 + 5.2):
-#   train -> evaluate (ID + CIFAR-10-C) -> geometry -> aggregate.
+# Full pilot: train -> evaluate (ID + CIFAR-10-C) -> geometry -> aggregate.
 #
-# 18 training runs = {teacher, student w0.5, student w0.25} x {fp32, amp} x seeds.
-# AMP configs need a CUDA device; set SKIP_AMP=1 on a CPU-only machine.
+# 18 training runs: {teacher, student w0.5, student w0.25} x {fp32, amp} x seeds.
+# The AMP configs need CUDA; set SKIP_AMP=1 on a CPU-only machine.
 #
-# Usage:
-#   scripts/run_pilot.sh
-#   SEEDS="0 1 2" SKIP_AMP=1 scripts/run_pilot.sh
+#   bash scripts/run_pilot.sh
+#   SEEDS="0 1 2" SKIP_AMP=1 bash scripts/run_pilot.sh
 set -euo pipefail
 
 cd "$(dirname "$0")/.."

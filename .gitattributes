@@ -1,0 +1,7 @@
+# Shell scripts must stay LF so `bash scripts/*.sh` works on Linux (Colab/Kaggle)
+# even when checked out on Windows.
+*.sh    text eol=lf
+*.py    text eol=lf
+*.yaml  text eol=lf
+*.yml   text eol=lf
+*.ipynb text eol=lf

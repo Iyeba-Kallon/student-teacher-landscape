@@ -1,21 +1,9 @@
-"""Checkpoint save / load with reproducibility metadata.
+"""Saving and loading checkpoints.
 
-Every checkpoint is a single dict that carries enough information to rebuild the
-model without the original config file:
-
-    model_state    : fp32 state_dict (AMP runs keep fp32 master weights, so this
-                     is always fp32 regardless of training precision)
-    arch           : model registry key
-    width_mult     : channel width multiplier
-    num_classes    : output dimension
-    mode           : "teacher" | "student"
-    precision      : "fp32" | "amp"  (how the model was TRAINED)
-    seed           : run seed
-    epoch          : epoch index this checkpoint was saved at
-    metrics        : dict of metrics at save time (e.g. id_acc)
-    config         : full nested config dict
-    env            : software/hardware snapshot
-    torch_version  : torch.__version__
+A checkpoint is one dict holding the weights plus everything needed to rebuild
+the model without the original config: arch, width_mult, num_classes, mode,
+precision, seed, epoch, metrics, the full config, an environment snapshot and
+the torch version. Weights are always fp32 (AMP keeps fp32 master weights).
 """
 
 from __future__ import annotations
@@ -60,7 +48,6 @@ def save_checkpoint(
 
 
 def load_checkpoint(path: str | Path, map_location: str = "cpu") -> dict[str, Any]:
-    """Load the raw checkpoint dict."""
     return torch.load(path, map_location=map_location, weights_only=False)
 
 
@@ -69,17 +56,13 @@ def build_model_from_checkpoint(
     map_location: str = "cpu",
     device: torch.device | str | None = None,
 ) -> tuple[torch.nn.Module, dict[str, Any]]:
-    """Rebuild the model described by a checkpoint and load its weights.
+    """Rebuild the model from a checkpoint and load its weights.
 
-    Returns ``(model, checkpoint_dict)``. The model is returned in fp32 and in
-    ``eval()`` mode; callers that need training mode must switch it themselves.
+    The model comes back in fp32 and eval mode; switch it to train() yourself if
+    you need to.
     """
     ckpt = load_checkpoint(path, map_location=map_location)
-    model = build_model(
-        arch=ckpt["arch"],
-        num_classes=ckpt["num_classes"],
-        width_mult=ckpt["width_mult"],
-    )
+    model = build_model(ckpt["arch"], ckpt["num_classes"], ckpt["width_mult"])
     model.load_state_dict(ckpt["model_state"])
     model.float()
     model.eval()

@@ -1,32 +1,23 @@
-"""Adaptive worst-case sharpness (m-sharpness estimator).
+"""Adaptive m-sharpness.
 
-Definition used in this project — this is the number reported in Section 5.2
-and it is stated here in full so it is unambiguous.
+For micro-batches B of size m from the fixed geometry subset, we estimate
 
-We estimate, over micro-batches ``B`` of size ``m`` drawn from the fixed
-2,000-example geometry subset:
+    S_rho(w) = mean_B [ max over ||inv(T_w) eps|| <= rho of  L_B(w + eps) - L_B(w) ]
 
-    S_rho(w) = mean_B [  max_{|| T_w^{-1} eps ||_2 <= rho}  L_B(w + eps) - L_B(w)  ]
+where L_B is the mean cross-entropy on B (not the KD loss, so every model is
+measured against the same objective). The inner max is the standard single SAM
+ascent step: linearizing L_B(w + eps) and substituting u = inv(T_w) eps gives
 
-- ``L_B`` is the mean cross-entropy on micro-batch ``B`` (NOT the KD loss, so
-  teacher and students are measured on the same objective).
-- The inner maximization is approximated by the standard single normalized
-  ascent step. With the linearization ``L_B(w+eps) ~ L_B(w) + g . eps`` and the
-  substitution ``u = T_w^{-1} eps`` the maximizer is
+    eps* = rho * T_w^2 g / ||T_w g||        with g = grad L_B(w)
 
-      eps* = rho * T_w^2 g / || T_w g ||_2 ,     g = grad_w L_B(w)
+and a global L2 norm over all parameters. T_w is the ASAM adaptive operator
+(Kwon et al., 2021): T_w = |w| + eta for weight tensors (ndim >= 2) and T_w = 1
+for biases and BatchNorm gamma/beta. That makes the metric invariant to
+node-wise rescaling, which matters across different widths. adaptive=False sets
+T_w = 1 everywhere (plain m-sharpness / SAM).
 
-  (global L2 norm over all parameters).
-- ``T_w`` is the **adaptive** elementwise operator (Kwon et al., 2021, ASAM):
-    * weight tensors (ndim >= 2):        T_w = |w| + eta      (eta = 0.01)
-    * biases and BatchNorm gamma/beta:   T_w = 1              (no rescaling)
-  This makes the metric invariant to node-wise weight re-scaling, which matters
-  when comparing networks of different width. Setting ``adaptive=False`` uses
-  ``T_w = 1`` everywhere, recovering plain (non-adaptive) m-sharpness / SAM.
-- ``rho`` is fixed (default 0.05) and is reported alongside every value.
-
-All forward/backward passes run in fp32 with BatchNorm frozen (the caller must
-have run :func:`src.geometry.bn_utils.prepare_model_for_geometry`).
+rho is fixed (0.05) and reported with every result. Everything runs in fp32 with
+BN frozen; the caller must have run prepare_model_for_geometry first.
 """
 
 from __future__ import annotations
@@ -43,19 +34,18 @@ DEFAULT_ETA = 0.01
 _EPS = 1e-12
 
 
-def _adaptive_scales(params: list[torch.Tensor], eta: float,
-                     adaptive: bool) -> list[torch.Tensor]:
-    scales = []
+def _scales(params: list[torch.Tensor], eta: float, adaptive: bool) -> list[torch.Tensor]:
+    out = []
     for p in params:
         if adaptive and p.dim() >= 2:
-            scales.append(p.detach().abs() + eta)
+            out.append(p.detach().abs() + eta)
         else:
-            scales.append(torch.ones_like(p))
-    return scales
+            out.append(torch.ones_like(p))
+    return out
 
 
 @torch.enable_grad()
-def _sharpness_one_micro_batch(
+def _sharpness_one_batch(
     model: nn.Module, inputs: torch.Tensor, targets: torch.Tensor,
     params: list[torch.Tensor], rho: float, eta: float, adaptive: bool,
 ) -> float:
@@ -65,22 +55,17 @@ def _sharpness_one_micro_batch(
     clean = float(clean_loss.detach())
 
     grads = [p.grad.detach() for p in params]
-    scales = _adaptive_scales(params, eta, adaptive)
+    scales = _scales(params, eta, adaptive)
+    tg_norm = torch.sqrt(sum(((s * g) ** 2).sum() for s, g in zip(scales, grads))) + _EPS
 
-    # || T_w g ||_2  over all parameters.
-    tg_norm = torch.sqrt(
-        sum(((s * g) ** 2).sum() for s, g in zip(scales, grads))
-    ) + _EPS
-
-    # eps* = rho * T_w^2 g / || T_w g ||  ; apply, measure, revert.
-    eps_list = []
+    eps = []
     with torch.no_grad():
         for p, s, g in zip(params, scales, grads):
             e = rho * (s ** 2) * g / tg_norm
             p.add_(e)
-            eps_list.append(e)
+            eps.append(e)
         perturbed = float(F.cross_entropy(model(inputs), targets).detach())
-        for p, e in zip(params, eps_list):
+        for p, e in zip(params, eps):
             p.sub_(e)
 
     model.zero_grad(set_to_none=True)
@@ -96,10 +81,10 @@ def adaptive_sharpness(
     adaptive: bool = True,
     n_batches: int | None = None,
 ) -> dict[str, float]:
-    """Estimate rho-sharpness. See the module docstring for the exact definition.
+    """Estimate rho-sharpness (see the module docstring).
 
-    ``data_loader`` should already yield micro-batches of the desired size ``m``
-    (``src.data.build_geometry_loader(..., batch_size=m)``).
+    data_loader should already yield micro-batches of the desired size m, i.e.
+    build_geometry_loader(..., batch_size=m).
     """
     assert_fp32_no_autocast(model)
     was_training = model.training
@@ -116,11 +101,9 @@ def adaptive_sharpness(
             break
         inputs = inputs.to(device, non_blocking=True)
         targets = targets.to(device, non_blocking=True)
-        values.append(_sharpness_one_micro_batch(
-            model, inputs, targets, params, rho, eta, adaptive
-        ))
+        values.append(_sharpness_one_batch(model, inputs, targets, params,
+                                           rho, eta, adaptive))
 
-    # restore any grads the caller had
     for p, g in zip(params, saved_grads):
         p.grad = g
     if was_training:

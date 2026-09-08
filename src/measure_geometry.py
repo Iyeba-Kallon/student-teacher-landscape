@@ -1,30 +1,15 @@
 """Measure loss-landscape geometry for a trained checkpoint.
 
-All measurements run in **fp32** with **BatchNorm frozen** and **no autocast**,
-regardless of whether the checkpoint was trained with fp32 or AMP.
+Everything runs in fp32 with BatchNorm frozen and no autocast, whether the
+checkpoint was trained in fp32 or with AMP.
 
-Usage
------
-    # one checkpoint
-    python -m src.measure_geometry --checkpoint results/student_w0.5_amp_s0/checkpoints/best.pt
-
-    # every results/*/checkpoints/best.pt
+    python -m src.measure_geometry --checkpoint results/teacher_fp32_s0/checkpoints/best.pt
     python -m src.measure_geometry --all --results-dir results/
 
-Produces (per run)
-------------------
-- ``results/<run>/geometry.json``   full results + the exact measurement settings
-- ``results/<run>/summary.json``     gains a ``"geometry"`` block
-- ``results/<run>/metrics.csv``      gains a ``geometry`` row (append)
-
-Metrics
--------
-- ``adaptive_sharpness``      ASAM-style m-sharpness, rho reported (headline)
-- ``hessian_trace``           Hutchinson estimator (PyHessian)
-- ``hessian_top_eigenvalue``  power iteration (PyHessian)
-
-All three are computed on the same fixed, seeded 2,000-example subset of the
-CIFAR-10 *training* set, identical for every model.
+Per run it writes geometry.json (results plus the exact settings used), adds a
+"geometry" block to summary.json, and appends a geometry row to metrics.csv.
+The metrics are adaptive_sharpness (headline), hessian_trace, and
+hessian_top_eigenvalue, all on the same fixed 2,000-example training subset.
 """
 
 from __future__ import annotations
@@ -56,11 +41,9 @@ def measure_one(ckpt_path: Path, args) -> dict[str, Any]:
           f"mode={ckpt['mode']} trained_precision={ckpt['precision']} "
           f"seed={ckpt['seed']}  |  measured in fp32, device={device}")
 
-    # --- mandatory preparation: eval + frozen BN + fp32 ---
     prepare_model_for_geometry(model)
     assert_fp32_no_autocast(model)
 
-    # --- fixed geometry subset; batch size == sharpness micro-batch m ---
     set_seed(args.seed, deterministic=True)
     geom_loader = build_geometry_loader(
         args.data_dir, n_examples=args.n_geom, batch_size=args.m,
@@ -73,10 +56,9 @@ def measure_one(ckpt_path: Path, args) -> dict[str, Any]:
         "bn": "eval + frozen running stats (momentum=0)",
         "geometry_subset": {"split": "cifar10_train", "n": args.n_geom,
                             "subset_seed": args.subset_seed},
-        "sharpness": {"kind": "adaptive_m_sharpness" if args.adaptive
-                      else "m_sharpness", "rho": args.rho, "eta": DEFAULT_ETA,
-                      "m": args.m, "ascent_steps": 1,
-                      "n_batches": args.sharpness_batches},
+        "sharpness": {"kind": "adaptive_m_sharpness" if args.adaptive else "m_sharpness",
+                      "rho": args.rho, "eta": DEFAULT_ETA, "m": args.m,
+                      "ascent_steps": 1, "n_batches": args.sharpness_batches},
         "hessian": {"library": "pyhessian", "trace_estimator": "hutchinson",
                     "trace_max_iter": args.hessian_trace_iter,
                     "eig_method": "power_iteration",
@@ -90,26 +72,23 @@ def measure_one(ckpt_path: Path, args) -> dict[str, Any]:
         "settings": settings,
     }
 
-    # --- Hessian first (does not modify parameters) ---
+    # Hessian first: it does not touch the parameters. Sharpness perturbs and
+    # restores them, so any tiny residual drift lands after the Hessian is done.
     if not args.skip_hessian:
         print("  [hessian] trace + top eigenvalue (PyHessian) ...")
-        h = hessian_metrics(
-            model, geom_loader, device, seed=args.seed,
-            trace_max_iter=args.hessian_trace_iter,
-            eig_max_iter=args.hessian_eig_iter,
-        )
+        h = hessian_metrics(model, geom_loader, device, seed=args.seed,
+                            trace_max_iter=args.hessian_trace_iter,
+                            eig_max_iter=args.hessian_eig_iter)
         result.update(h)
         print(f"    trace={h['hessian_trace']:.4f} (+/-{h['hessian_trace_std']:.4f}, "
               f"{h['hessian_trace_n_iter']} it)  lambda_max={h['hessian_top_eigenvalue']:.4f}")
 
-    # --- Sharpness (perturbs then restores parameters) ---
     if not args.skip_sharpness:
         print(f"  [sharpness] {'adaptive ' if args.adaptive else ''}m-sharpness "
               f"rho={args.rho} m={args.m} ...")
-        s = adaptive_sharpness(
-            model, geom_loader, device, rho=args.rho, eta=DEFAULT_ETA,
-            adaptive=args.adaptive, n_batches=args.sharpness_batches,
-        )
+        s = adaptive_sharpness(model, geom_loader, device, rho=args.rho,
+                               eta=DEFAULT_ETA, adaptive=args.adaptive,
+                               n_batches=args.sharpness_batches)
         result.update(s)
         print(f"    adaptive_sharpness={s['adaptive_sharpness']:.5f} "
               f"(+/-{s['sharpness_std']:.5f}, {s['n_micro_batches']} micro-batches)")
@@ -134,7 +113,7 @@ def _write_outputs(run_dir: Path, result: dict[str, Any]) -> None:
     logger.log_metrics(0, "geometry", **row)
     logger.update_summary(geometry=geom_summary)
     logger.finish()
-    print(f"  wrote {run_dir/'geometry.json'}; updated summary.json + metrics.csv")
+    print(f"  wrote {run_dir / 'geometry.json'}; updated summary.json + metrics.csv")
 
 
 def _discover_checkpoints(results_dir: Path) -> list[Path]:
@@ -144,33 +123,29 @@ def _discover_checkpoints(results_dir: Path) -> list[Path]:
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    mode = p.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--checkpoint", type=str)
-    mode.add_argument("--all", action="store_true")
+    target = p.add_mutually_exclusive_group(required=True)
+    target.add_argument("--checkpoint")
+    target.add_argument("--all", action="store_true")
 
-    p.add_argument("--results-dir", default="results", type=str)
-    p.add_argument("--data-dir", default="data", type=str)
-    p.add_argument("--device", default=None, type=str, help="cuda | cpu (auto)")
+    p.add_argument("--results-dir", default="results")
+    p.add_argument("--data-dir", default="data")
+    p.add_argument("--device", default=None, help="cuda or cpu (auto if unset)")
 
-    # geometry subset
-    p.add_argument("--n-geom", default=2000, type=int,
-                   help="size of the fixed CIFAR-10-train geometry subset")
-    p.add_argument("--subset-seed", default=1234, type=int)
-    p.add_argument("--seed", default=0, type=int,
-                   help="seed for Hutchinson probes / power iteration")
+    p.add_argument("--n-geom", type=int, default=2000, help="geometry subset size")
+    p.add_argument("--subset-seed", type=int, default=1234)
+    p.add_argument("--seed", type=int, default=0,
+                   help="seed for the Hessian estimators")
 
-    # sharpness
-    p.add_argument("--rho", default=DEFAULT_RHO, type=float)
-    p.add_argument("--m", default=128, type=int, help="sharpness micro-batch size")
+    p.add_argument("--rho", type=float, default=DEFAULT_RHO)
+    p.add_argument("--m", type=int, default=128, help="sharpness micro-batch size")
     p.add_argument("--adaptive", dest="adaptive", action="store_true", default=True)
     p.add_argument("--no-adaptive", dest="adaptive", action="store_false",
-                   help="use plain (non-adaptive) m-sharpness instead")
-    p.add_argument("--sharpness-batches", default=None, type=int,
-                   help="cap on the number of micro-batches (default: all)")
+                   help="use plain m-sharpness instead")
+    p.add_argument("--sharpness-batches", type=int, default=None,
+                   help="cap the number of micro-batches (default: all)")
 
-    # hessian
-    p.add_argument("--hessian-trace-iter", default=100, type=int)
-    p.add_argument("--hessian-eig-iter", default=100, type=int)
+    p.add_argument("--hessian-trace-iter", type=int, default=100)
+    p.add_argument("--hessian-eig-iter", type=int, default=100)
     p.add_argument("--skip-hessian", action="store_true")
     p.add_argument("--skip-sharpness", action="store_true")
     return p.parse_args()

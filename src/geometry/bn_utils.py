@@ -1,20 +1,15 @@
-"""Model preparation for loss-landscape geometry measurements.
+"""Getting a model ready for a geometry measurement.
 
-Every sharpness / Hessian measurement MUST call
-:func:`prepare_model_for_geometry` first. It enforces the three rules from the
-pilot spec:
+Call prepare_model_for_geometry() before measuring sharpness or the Hessian. It
+does three things:
 
-1. ``model.eval()`` so BatchNorm uses its *running* statistics, not per-batch
-   statistics.
-2. BatchNorm running stats are **frozen** — ``momentum`` is set to 0 and the
-   layers are individually put in eval mode, so no forward pass (even an
-   accidental one in train mode) can move them. Contaminated BN curvature is a
-   known failure mode for these estimates.
-3. The whole model is cast to **fp32**. Geometry is always measured in full
-   precision, even for checkpoints that were *trained* with AMP.
+1. model.eval(), so BatchNorm uses its running statistics.
+2. Freezes those statistics (momentum 0, every BN layer in eval mode) so no
+   forward pass can move them. Curvature measured while BN stats drift is wrong.
+3. Casts the model to fp32. Geometry is always measured in fp32, even for a
+   model that was trained with AMP.
 
-There is deliberately no ``autocast`` anywhere in ``src/geometry`` — call
-:func:`assert_fp32_no_autocast` at the top of every measurement entry point.
+Nothing in this package uses autocast. assert_fp32_no_autocast() is the guard.
 """
 
 from __future__ import annotations
@@ -26,39 +21,33 @@ _BN = (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d, nn.SyncBatchNorm)
 
 
 def prepare_model_for_geometry(model: nn.Module) -> nn.Module:
-    """Put ``model`` in eval mode, freeze BN running stats, cast to fp32.
-
-    Mutates ``model`` in place and also returns it. Intended to be called on a
-    freshly loaded checkpoint whose only remaining use is geometry measurement.
-    """
+    """Eval mode, frozen BN, fp32. Mutates model in place and returns it."""
     model.eval()
     model.float()
 
-    n_bn = 0
     for m in model.modules():
         if isinstance(m, _BN):
             m.eval()
-            m.momentum = 0.0            # no EMA update even if forced to train()
+            m.momentum = 0.0
             if m.running_mean is not None:
                 m.running_mean = m.running_mean.float()
                 m.running_var = m.running_var.float()
-            n_bn += 1
 
-    # Sharpness and Hessian both need gradients w.r.t. every parameter.
     for p in model.parameters():
-        p.requires_grad_(True)
+        p.requires_grad_(True)      # sharpness and the Hessian both need grads
 
     return model
 
 
 def assert_fp32_no_autocast(model: nn.Module | None = None) -> None:
-    """Guard: geometry code must never run under autocast, and the model
-    (if given) must be fp32."""
-    if torch.is_autocast_enabled() or torch.is_autocast_cpu_enabled():
-        raise RuntimeError(
-            "Geometry measurements must not run under torch.autocast. "
-            "Precision is a training-time variable only."
-        )
+    """Raise if autocast is active, or if the model has non-fp32 parameters."""
+    cuda_ac = torch.is_autocast_enabled()
+    try:
+        cpu_ac = torch.is_autocast_cpu_enabled()
+    except AttributeError:                      # renamed in newer torch
+        cpu_ac = torch.is_autocast_enabled("cpu")
+    if cuda_ac or cpu_ac:
+        raise RuntimeError("geometry must not run under torch.autocast")
     if model is not None:
         dtypes = {p.dtype for p in model.parameters()}
         if dtypes and dtypes != {torch.float32}:
@@ -66,9 +55,8 @@ def assert_fp32_no_autocast(model: nn.Module | None = None) -> None:
 
 
 def bn_is_frozen(model: nn.Module) -> bool:
-    """True iff every BN layer is in eval mode with momentum 0 (for tests)."""
-    for m in model.modules():
-        if isinstance(m, _BN):
-            if m.training or (m.momentum not in (0, 0.0)):
-                return False
-    return True
+    """True if every BN layer is in eval mode with momentum 0. Used by tests."""
+    return all(
+        not m.training and m.momentum in (0, 0.0)
+        for m in model.modules() if isinstance(m, _BN)
+    )

@@ -1,30 +1,20 @@
-# Core deep learning stack
-# Pin major/minor versions for reproducibility; adjust the torch build to your CUDA setup.
+# Install the torch build for your CUDA version first (see pytorch.org), then
+# `pip install -r requirements.txt`.
 torch==2.3.1
 torchvision==0.18.1
 
-# Numerics / data
 numpy==1.26.4
-scipy==1.13.1
 pandas==2.2.2
+pyyaml==6.0.1
+requests==2.32.3
 
-# Hessian-based geometry metrics
+# Hessian trace / eigenvalue
 pyhessian==0.1
 
-# Config system
-pyyaml==6.0.1
-
-# Progress bars / utilities
-tqdm==4.66.4
-
-# Plotting / analysis (notebooks)
+# notebooks/analysis.ipynb
 matplotlib==3.9.0
-seaborn==0.13.2
 notebook==7.2.1
-ipython==8.25.0
+ipykernel==6.29.4
 
-# Optional experiment tracking (disabled by default, enabled with --wandb)
+# optional, only used with --wandb
 wandb==0.17.0
-
-# Downloading CIFAR-10-C
-requests==2.32.3
