@@ -20,6 +20,9 @@ results/**/*.pt
 results/**/*.pth
 *.ckpt
 
+# Smoke-test scratch outputs (scripts/smoke.*)
+results_smoke/
+
 # Keep result CSV/JSON summaries but ignore large artifacts by default
 # (comment the lines above if you want to version checkpoints)
 
