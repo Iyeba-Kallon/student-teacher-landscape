@@ -26,12 +26,15 @@ mkdir -p "$RD"
 echo "=== phase1 started $(date) ===" | tee -a "$LOG"
 python -c "import torch;print('[env] torch',torch.__version__,'cuda',torch.cuda.is_available())" | tee -a "$LOG"
 
+EPOCHS="${EPOCHS:-30}"   # phase-1 is a short signal check; override the config
+
 run_train () {  # $1 = config, $2 = seed, $3 = run_name
   if [ -f "$RD/$3/checkpoints/best.pt" ]; then
     echo "[skip] $3 (best.pt exists)" | tee -a "$LOG"
   else
     echo "[train] $3 @ $(date)" | tee -a "$LOG"
-    python -u -m src.train --config "$1" --seed "$2" 2>&1 | tee -a "$LOG"
+    python -u -m src.train --config "$1" --seed "$2" \
+      --set "schedule.epochs=$EPOCHS" 2>&1 | tee -a "$LOG"
   fi
 }
 
