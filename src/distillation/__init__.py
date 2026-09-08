@@ -1,9 +1,4 @@
-"""Distillation losses.
-
-Only response-based (logit) KD is implemented for the pilot. Feature-based
-distillation would be added here as a sibling module without touching the
-training script (which only depends on the ``kd_loss`` interface).
-"""
+"""Distillation losses. Only logit KD for now; feature distillation would go here."""
 
 from .kd import KDLossOutput, freeze_teacher, kd_loss
 
