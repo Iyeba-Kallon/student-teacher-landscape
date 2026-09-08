@@ -3,8 +3,8 @@
 # in from this run's precision/seed, so `--seed 1` distills from teacher seed 1.
 # Run once per seed:  python -m src.train --config configs/student_w0.5_fp32.yaml --seed {0,1,2}
 #
-# NOTE: epochs reduced 200 -> 100 for the reduced CPU pilot (phase 1). Keep the
-# teacher at the same budget; restore 200 for the full GPU pilot.
+# NOTE: epochs reduced 200 -> 30 for the phase-1 signal check on CPU. Keep the
+# teacher at the same budget; restore 200 for the full pilot.
 mode: student
 precision: fp32
 seed: 0
@@ -31,7 +31,7 @@ optim:
 
 schedule:
   name: cosine
-  epochs: 100          # reduced CPU pilot (phase 1); 200 for the full GPU pilot
+  epochs: 30           # phase-1 signal check on CPU; restore 200 for the full pilot
   warmup_epochs: 0
 
 kd:
