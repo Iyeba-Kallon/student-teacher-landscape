@@ -5,8 +5,11 @@
 #
 # Guards against the two silent failures:
 #   - aborts up front if any fp32 config is not at 200 epochs
-#   - skips a training run only when its checkpoints/best.pt exists (not just the
-#     directory), so a crash-restart resumes instead of skipping unfinished work
+#   - always invokes src.train for every (config, seed); src.train itself checks
+#     checkpoints/last.pt and either trains fresh, resumes from the saved epoch
+#     (optimizer/scheduler/scaler state included), or exits as a fast no-op if
+#     that run already reached the target epoch. A run that was interrupted
+#     mid-training is never mistaken for a finished one.
 #
 # Env overrides:
 #   SEEDS="0 1 2 3 4"
@@ -35,12 +38,8 @@ echo "=== phase2 started $(date) ===" | tee -a "$LOG"
 python -c "import torch;print('[env] torch',torch.__version__,'cuda',torch.cuda.is_available())" | tee -a "$LOG"
 
 run_train () {  # $1 config, $2 seed, $3 run_name
-  if [ -f "$RD/$3/checkpoints/best.pt" ]; then
-    echo "[skip] $3" | tee -a "$LOG"
-  else
-    echo "[train] $3 @ $(date)" | tee -a "$LOG"
-    python -u -m src.train --config "$1" --seed "$2" 2>&1 | tee -a "$LOG"
-  fi
+  echo "[run] $3 @ $(date)" | tee -a "$LOG"
+  python -u -m src.train --config "$1" --seed "$2" 2>&1 | tee -a "$LOG"
 }
 
 for s in $SEEDS; do run_train configs/teacher_fp32.yaml      "$s" "teacher_fp32_s$s"; done

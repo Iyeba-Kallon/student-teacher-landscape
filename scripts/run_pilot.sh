@@ -19,15 +19,13 @@ SKIP_AMP="${SKIP_AMP:-0}"
 if [ "$SKIP_AMP" = "1" ]; then PRECISIONS="fp32"; else PRECISIONS="fp32 amp"; fi
 STUDENTS="w0.5 w0.25"
 
-# Skip a run only when its checkpoints/best.pt exists, so a crash-restart resumes
-# rather than skipping unfinished work (an empty results/<run>/ does not count).
+# src.train itself checks checkpoints/last.pt: trains fresh if there is none,
+# resumes from the saved epoch (optimizer/scheduler/scaler state included) if
+# there is one and it's short of the target, or exits as a fast no-op if that
+# run already finished. So it's always safe to just call it.
 run_train () {  # $1 config, $2 seed, $3 run_name
-  if [ -f "$RESULTS_DIR/$3/checkpoints/best.pt" ]; then
-    echo "-- skip $3 (done) --"
-  else
-    echo "-- $3 --"
-    python -m src.train --config "$1" --seed "$2"
-  fi
+  echo "-- $3 --"
+  python -m src.train --config "$1" --seed "$2"
 }
 
 echo "=== STEP 0: data ==="
