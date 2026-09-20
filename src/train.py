@@ -7,6 +7,15 @@ mode: student needs kd.teacher_checkpoint (which may contain {precision}/{seed}/
 {results_dir} placeholders, filled in after --seed is applied). precision: amp
 uses autocast + GradScaler for training only and needs CUDA; validation and the
 saved weights are always fp32. Output goes to results/<run_name>/.
+
+Resume: if results/<run_name>/checkpoints/last.pt already exists, training picks
+up from the epoch after it instead of starting over. last.pt carries the
+optimizer/scheduler/scaler state alongside the weights, so this is a real
+continuation, not a soft restart -- LR schedule and momentum carry over. The one
+thing not restored is the data loader's RNG/shuffle state, so a resumed run sees
+a different batch order than an uninterrupted one would have; harmless for
+training, just means a resumed run isn't bit-for-bit reproducible against a
+from-scratch run with the same seed.
 """
 
 from __future__ import annotations
@@ -14,10 +23,11 @@ from __future__ import annotations
 import argparse
 import time
 from pathlib import Path
+from typing import Any
 
 import torch
 
-from .checkpoint import build_model_from_checkpoint, save_checkpoint
+from .checkpoint import build_model_from_checkpoint, load_checkpoint, save_checkpoint
 from .config import Config, load_config
 from .data import build_cifar10_loaders
 from .distillation.kd import freeze_teacher
@@ -62,6 +72,30 @@ def load_teacher(cfg: Config, device: torch.device) -> torch.nn.Module:
     return teacher
 
 
+def load_resume_state(ckpt_dir: Path, device: torch.device) -> dict[str, Any] | None:
+    """If checkpoints/last.pt exists, load it for a resume. Otherwise None."""
+    last_path = ckpt_dir / "last.pt"
+    if not last_path.exists():
+        return None
+    ckpt = load_checkpoint(last_path, map_location=str(device))
+    best_path = ckpt_dir / "best.pt"
+    if best_path.exists():
+        best_ckpt = load_checkpoint(best_path, map_location="cpu")
+        best_acc = best_ckpt["metrics"].get("id_acc", 0.0)
+        best_epoch = best_ckpt["epoch"]
+    else:  # last.pt without a best.pt should not happen, but do not crash on it
+        best_acc, best_epoch = ckpt["metrics"].get("id_acc", 0.0), ckpt["epoch"]
+    return {
+        "model_state": ckpt["model_state"],
+        "optimizer_state": ckpt.get("optimizer_state"),
+        "scheduler_state": ckpt.get("scheduler_state"),
+        "scaler_state": ckpt.get("scaler_state"),
+        "start_epoch": ckpt["epoch"] + 1,
+        "best_acc": best_acc,
+        "best_epoch": best_epoch,
+    }
+
+
 def main() -> None:
     args = parse_args()
     cfg = load_config(args.config, overrides=args.set)
@@ -85,7 +119,9 @@ def main() -> None:
 
     run_dir = cfg.run_dir()
     ckpt_dir = run_dir / "checkpoints"
-    logger = RunLogger(run_dir, config=cfg, use_wandb=cfg.wandb.enabled)
+    # append=True: a resumed run extends metrics.csv/summary.json instead of
+    # wiping them; harmless for a fresh run, which has nothing to append to yet.
+    logger = RunLogger(run_dir, config=cfg, use_wandb=cfg.wandb.enabled, append=True)
     print(f"[run] {cfg.resolve_run_name()}  ->  {run_dir}")
     print(f"[cfg] mode={cfg.mode} precision={cfg.precision} seed={cfg.seed} "
           f"device={device} epochs={cfg.schedule.epochs}")
@@ -107,9 +143,26 @@ def main() -> None:
     scheduler = build_scheduler(optimizer, cfg.schedule)
     scaler = torch.amp.GradScaler("cuda", enabled=amp)
 
-    best_acc, best_epoch = 0.0, -1
+    start_epoch, best_acc, best_epoch = 0, 0.0, -1
+    resume = load_resume_state(ckpt_dir, device)
+    if resume is not None:
+        model.load_state_dict(resume["model_state"])
+        if resume["optimizer_state"] is not None:
+            optimizer.load_state_dict(resume["optimizer_state"])
+        if resume["scheduler_state"] is not None:
+            scheduler.load_state_dict(resume["scheduler_state"])
+        if resume["scaler_state"] is not None:
+            scaler.load_state_dict(resume["scaler_state"])
+        start_epoch = resume["start_epoch"]
+        best_acc, best_epoch = resume["best_acc"], resume["best_epoch"]
+        print(f"[resume] found checkpoints at epoch {start_epoch - 1}; "
+              f"continuing from epoch {start_epoch} "
+              f"(best so far: {best_acc:.4f} @ epoch {best_epoch})")
+        if start_epoch >= cfg.schedule.epochs:
+            print(f"[resume] already reached epochs={cfg.schedule.epochs}; nothing to do")
+
     t0 = time.time()
-    for epoch in range(cfg.schedule.epochs):
+    for epoch in range(start_epoch, cfg.schedule.epochs):
         train_stats = train_one_epoch(
             model=model, loader=train_loader, optimizer=optimizer, device=device,
             scaler=scaler, amp=amp, teacher=teacher,
@@ -131,14 +184,23 @@ def main() -> None:
 
         metrics = {"id_acc": val_stats["acc"], "id_error": val_stats["error"],
                    "train_loss": train_stats["loss"]}
-        save_checkpoint(ckpt_dir / "last.pt", model, cfg, epoch, metrics)
+        # optimizer/scheduler/scaler state only needs to live on last.pt: it is
+        # what a resume loads from. best.pt stays a plain model checkpoint, since
+        # that is what evaluate.py / measure_geometry.py / build_model_from_checkpoint
+        # consume, and adding training state there would only bloat it.
+        save_checkpoint(ckpt_dir / "last.pt", model, cfg, epoch, metrics, extra={
+            "optimizer_state": optimizer.state_dict(),
+            "scheduler_state": scheduler.state_dict(),
+            "scaler_state": scaler.state_dict(),
+        })
         if val_stats["acc"] > best_acc:
             best_acc, best_epoch = val_stats["acc"], epoch
             save_checkpoint(ckpt_dir / "best.pt", model, cfg, epoch, metrics)
 
     elapsed = time.time() - t0
+    final_acc = val_stats["acc"] if start_epoch < cfg.schedule.epochs else best_acc
     logger.update_summary(best_id_acc=best_acc, best_epoch=best_epoch,
-                          final_id_acc=val_stats["acc"], train_seconds=elapsed)
+                          final_id_acc=final_acc, train_seconds=elapsed)
     logger.finish()
     print(f"[done] best val_acc={best_acc:.4f} @ epoch {best_epoch}  "
           f"({elapsed / 60:.1f} min)  ->  {ckpt_dir / 'best.pt'}")
