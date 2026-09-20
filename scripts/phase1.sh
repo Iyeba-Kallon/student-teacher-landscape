@@ -5,8 +5,8 @@
 # Meant for a GPU (Colab/Kaggle T4), where it takes about 15-25 minutes. On CPU
 # a width-1.0 ResNet-18 is far too slow.
 #
-# Re-running is safe: a training run with an existing checkpoints/best.pt is
-# skipped, so an interrupted session resumes.
+# Re-running is safe: src.train resumes any run that didn't reach its target
+# epoch (optimizer/scheduler state included) and is a fast no-op for one that did.
 #
 # Env overrides:
 #   SEEDS="0 1"       seeds to run
@@ -29,13 +29,9 @@ python -c "import torch;print('[env] torch',torch.__version__,'cuda',torch.cuda.
 EPOCHS="${EPOCHS:-30}"   # phase-1 is a short signal check; override the config
 
 run_train () {  # $1 = config, $2 = seed, $3 = run_name
-  if [ -f "$RD/$3/checkpoints/best.pt" ]; then
-    echo "[skip] $3 (best.pt exists)" | tee -a "$LOG"
-  else
-    echo "[train] $3 @ $(date)" | tee -a "$LOG"
-    python -u -m src.train --config "$1" --seed "$2" \
-      --set "schedule.epochs=$EPOCHS" 2>&1 | tee -a "$LOG"
-  fi
+  echo "[run] $3 @ $(date)" | tee -a "$LOG"
+  python -u -m src.train --config "$1" --seed "$2" \
+    --set "schedule.epochs=$EPOCHS" 2>&1 | tee -a "$LOG"
 }
 
 for s in $SEEDS; do run_train configs/teacher_fp32.yaml     "$s" "teacher_fp32_s$s"; done
