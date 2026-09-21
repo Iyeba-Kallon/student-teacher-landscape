@@ -141,7 +141,6 @@ def main() -> None:
     teacher = load_teacher(cfg, device) if cfg.mode == "student" else None
 
     optimizer = build_optimizer(model, cfg.optim)
-    scheduler = build_scheduler(optimizer, cfg.schedule)
     scaler = torch.amp.GradScaler("cuda", enabled=amp)
 
     start_epoch, best_acc, best_epoch = 0, 0.0, -1
@@ -158,10 +157,18 @@ def main() -> None:
         start_epoch = resume["start_epoch"]
         best_acc, best_epoch = resume["best_acc"], resume["best_epoch"]
 
-        # The LR schedule is a pure function of the epoch index, so rebuild its
-        # position by stepping rather than trusting saved scheduler state. This is
-        # correct for checkpoints from older code that saved none, and it can't be
-        # thrown off by a stale state.
+        # load_state_dict also restores the LR the optimizer had when it was saved
+        # (or, from an earlier buggy resume, a wrong one). The recursive cosine
+        # update decays from whatever LR it finds, so put the base LR back before the
+        # scheduler is built. The schedule is a pure function of the epoch index, so
+        # it is then rebuilt by stepping to the resume epoch, which also works for
+        # checkpoints from older code that saved no state at all.
+        for group in optimizer.param_groups:
+            group["lr"] = cfg.optim.lr
+            group.pop("initial_lr", None)
+
+    scheduler = build_scheduler(optimizer, cfg.schedule)
+    if resume is not None:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")   # "scheduler.step() before optimizer.step()"
             for _ in range(start_epoch):
