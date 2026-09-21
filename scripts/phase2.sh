@@ -42,9 +42,38 @@ run_train () {  # $1 config, $2 seed, $3 run_name
   python -u -m src.train --config "$1" --seed "$2" 2>&1 | tee -a "$LOG"
 }
 
+# Cosine LR must fall monotonically to ~0. A jump up means a resume reset the
+# schedule (that produced a bad teacher once), so refuse to build on such a run.
+check_schedules () {  # $1 = glob of run dirs under $RD
+  python - "$RD" "$1" <<'PY' | tee -a "$LOG"
+import csv, glob, sys
+root, pattern = sys.argv[1], sys.argv[2]
+bad = []
+for f in sorted(glob.glob(f"{root}/{pattern}/metrics.csv")):
+    with open(f, newline="") as fh:
+        lrs = [float(r["lr"]) for r in csv.DictReader(fh) if r["split"] == "train" and r.get("lr")]
+    if not lrs:
+        continue
+    jump = next((i for i in range(1, len(lrs)) if lrs[i] > lrs[i - 1] + 1e-9), None)
+    if jump is not None:
+        bad.append(f"{f}: LR jumps up at logged epoch {jump} ({lrs[jump-1]:.5f} -> {lrs[jump]:.5f}), schedule was reset")
+    elif lrs[-1] > 1e-3:
+        bad.append(f"{f}: ended at lr={lrs[-1]:.5f}, schedule did not finish")
+if bad:
+    print("BAD RUNS (delete the run folder and re-run to retrain):")
+    for b in bad:
+        print("  " + b)
+    sys.exit(1)
+print("[check] all LR schedules complete and monotone")
+PY
+}
+
 for s in $SEEDS; do run_train configs/teacher_fp32.yaml      "$s" "teacher_fp32_s$s"; done
+check_schedules "teacher_fp32_s*"   # do not distill from a defective teacher
 for s in $SEEDS; do run_train configs/student_w0.5_fp32.yaml  "$s" "student_w0.5_fp32_s$s"; done
 for s in $SEEDS; do run_train configs/student_w0.25_fp32.yaml "$s" "student_w0.25_fp32_s$s"; done
+
+check_schedules "*"                 # every run, before spending time on eval/geometry
 
 echo "[evaluate] @ $(date)" | tee -a "$LOG"
 python -u -m src.evaluate --all --results-dir "$RD" 2>&1 | tee -a "$LOG"

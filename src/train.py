@@ -10,9 +10,10 @@ saved weights are always fp32. Output goes to results/<run_name>/.
 
 Resume: if results/<run_name>/checkpoints/last.pt already exists, training picks
 up from the epoch after it instead of starting over. last.pt carries the
-optimizer/scheduler/scaler state alongside the weights, so this is a real
-continuation, not a soft restart -- LR schedule and momentum carry over. The one
-thing not restored is the data loader's RNG/shuffle state, so a resumed run sees
+optimizer and GradScaler state alongside the weights; the LR schedule is rebuilt
+by stepping the scheduler to the resume epoch, so it is correct even for
+checkpoints written by older code. The one thing not restored is the data
+loader's RNG/shuffle state, so a resumed run sees
 a different batch order than an uninterrupted one would have; harmless for
 training, just means a resumed run isn't bit-for-bit reproducible against a
 from-scratch run with the same seed.
@@ -22,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import time
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -88,7 +90,6 @@ def load_resume_state(ckpt_dir: Path, device: torch.device) -> dict[str, Any] | 
     return {
         "model_state": ckpt["model_state"],
         "optimizer_state": ckpt.get("optimizer_state"),
-        "scheduler_state": ckpt.get("scheduler_state"),
         "scaler_state": ckpt.get("scaler_state"),
         "start_epoch": ckpt["epoch"] + 1,
         "best_acc": best_acc,
@@ -149,15 +150,27 @@ def main() -> None:
         model.load_state_dict(resume["model_state"])
         if resume["optimizer_state"] is not None:
             optimizer.load_state_dict(resume["optimizer_state"])
-        if resume["scheduler_state"] is not None:
-            scheduler.load_state_dict(resume["scheduler_state"])
+        else:
+            print("[resume] WARNING: checkpoint has no optimizer state (written by "
+                  "older code); momentum buffers start from zero")
         if resume["scaler_state"] is not None:
             scaler.load_state_dict(resume["scaler_state"])
         start_epoch = resume["start_epoch"]
         best_acc, best_epoch = resume["best_acc"], resume["best_epoch"]
+
+        # The LR schedule is a pure function of the epoch index, so rebuild its
+        # position by stepping rather than trusting saved scheduler state. This is
+        # correct for checkpoints from older code that saved none, and it can't be
+        # thrown off by a stale state.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")   # "scheduler.step() before optimizer.step()"
+            for _ in range(start_epoch):
+                scheduler.step()
+
         print(f"[resume] found checkpoints at epoch {start_epoch - 1}; "
               f"continuing from epoch {start_epoch} "
-              f"(best so far: {best_acc:.4f} @ epoch {best_epoch})")
+              f"(best so far: {best_acc:.4f} @ epoch {best_epoch}), "
+              f"lr={optimizer.param_groups[0]['lr']:.5f}")
         if start_epoch >= cfg.schedule.epochs:
             print(f"[resume] already reached epochs={cfg.schedule.epochs}; nothing to do")
 
@@ -184,18 +197,24 @@ def main() -> None:
 
         metrics = {"id_acc": val_stats["acc"], "id_error": val_stats["error"],
                    "train_loss": train_stats["loss"]}
-        # optimizer/scheduler/scaler state only needs to live on last.pt: it is
-        # what a resume loads from. best.pt stays a plain model checkpoint, since
-        # that is what evaluate.py / measure_geometry.py / build_model_from_checkpoint
-        # consume, and adding training state there would only bloat it.
+        # optimizer/scaler state only needs to live on last.pt: it is what a resume
+        # loads from. best.pt stays a plain model checkpoint, since that is what
+        # evaluate.py / measure_geometry.py / build_model_from_checkpoint consume.
+        # The LR scheduler is not saved: it is rebuilt from the epoch index.
         save_checkpoint(ckpt_dir / "last.pt", model, cfg, epoch, metrics, extra={
             "optimizer_state": optimizer.state_dict(),
-            "scheduler_state": scheduler.state_dict(),
             "scaler_state": scaler.state_dict(),
         })
         if val_stats["acc"] > best_acc:
             best_acc, best_epoch = val_stats["acc"], epoch
             save_checkpoint(ckpt_dir / "best.pt", model, cfg, epoch, metrics)
+
+    if cfg.schedule.name.lower() == "cosine":
+        final_lr = optimizer.param_groups[0]["lr"]
+        if final_lr > 1e-3:
+            print(f"[WARN] cosine schedule finished at lr={final_lr:.5f}, not ~0: this "
+                  f"run did not anneal (was it resumed with a reset schedule?). "
+                  f"Delete {run_dir} and retrain before using it.")
 
     elapsed = time.time() - t0
     final_acc = val_stats["acc"] if start_epoch < cfg.schedule.epochs else best_acc
